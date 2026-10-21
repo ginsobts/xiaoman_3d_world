@@ -170,6 +170,11 @@ namespace VN.World
             spawn.transform.localRotation = Quaternion.identity;
             level.spawnPoint = spawn.transform;
 
+            // 编辑场景时也能看到角色出生位置；进入 Play 后 WorldController 会隐藏它，
+            // 并在同一位置生成真正带 CharacterController 的玩家。
+            var preview = FairytaleArt.BuildExplorer(spawn.transform);
+            preview.name = "PlayerPreview_EDIT_ONLY";
+
             // 开场旁白触发区
             var introZone = new GameObject("IntroTrigger");
             introZone.transform.SetParent(root, false);

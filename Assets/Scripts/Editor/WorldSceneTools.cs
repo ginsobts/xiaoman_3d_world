@@ -18,6 +18,33 @@ namespace VN.EditorTools
     {
         private const string ScenePath = "Assets/Scenes/World3D.unity";
 
+        // 第一次升级到 3D 框架时自动生成一个真正可编辑的场景资产。
+        // 用 Additive 临时场景生成，不会关闭或覆盖用户当前正在编辑的场景。
+        [InitializeOnLoadMethod]
+        private static void EnsureEditableWorldScene()
+        {
+            if (WorldSceneExists()) return;
+            EditorApplication.delayCall += TryCreateEditableWorldScene;
+        }
+
+        private static void TryCreateEditableWorldScene()
+        {
+            if (WorldSceneExists()) return;
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                EditorApplication.playModeStateChanged += CreateAfterPlayMode;
+                return;
+            }
+            CreateWorldSceneAsset();
+        }
+
+        private static void CreateAfterPlayMode(PlayModeStateChange state)
+        {
+            if (state != PlayModeStateChange.EnteredEditMode) return;
+            EditorApplication.playModeStateChanged -= CreateAfterPlayMode;
+            EditorApplication.delayCall += TryCreateEditableWorldScene;
+        }
+
         [MenuItem("3D世界/在当前场景生成原型关卡")]
         public static void BuildPrototypeInCurrentScene()
         {
@@ -49,11 +76,22 @@ namespace VN.EditorTools
         [MenuItem("3D世界/新建 World3D 场景")]
         public static void CreateWorldScene()
         {
-            if (File.Exists(ScenePath) &&
+            CreateWorldSceneInternal(false);
+        }
+
+        /// <summary>CI / 命令行入口：无对话框地重建可编辑场景。</summary>
+        public static void CreateWorldSceneBatch()
+        {
+            CreateWorldSceneAsset();
+        }
+
+        private static void CreateWorldSceneInternal(bool force)
+        {
+            if (!force && WorldSceneExists() &&
                 !EditorUtility.DisplayDialog("场景已存在", ScenePath + " 已存在，要覆盖吗？", "覆盖", "取消"))
                 return;
 
-            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            if (!force && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
@@ -73,11 +111,67 @@ namespace VN.EditorTools
             EditorSceneManager.SaveScene(scene, ScenePath);
 
             // 加入 Build Settings（放到最前，作为启动场景）
+            AddWorldToBuildSettings();
+
+            Debug.Log("[3D世界] 已创建 " + ScenePath + " 并设为启动场景。");
+        }
+
+        private static void CreateWorldSceneAsset()
+        {
+            Scene previous = SceneManager.GetActiveScene();
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Additive);
+            SceneManager.SetActiveScene(scene);
+            try
+            {
+                var cam = scene.GetRootGameObjects()
+                    .Select(go => go.GetComponentInChildren<Camera>())
+                    .FirstOrDefault(found => found != null);
+                if (cam != null)
+                {
+                    cam.clearFlags = CameraClearFlags.Skybox;
+                    cam.nearClipPlane = 0.1f;
+                }
+
+                var levelGO = new GameObject("WorldLevel");
+                var level = levelGO.AddComponent<WorldLevel>();
+                LevelBuilder.BuildPrototype(level);
+                level.autoBuildPrototype = false;
+
+                Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
+                EditorSceneManager.SaveScene(scene, ScenePath);
+                AddWorldToBuildSettings();
+                AssetDatabase.Refresh();
+                Debug.Log("[3D世界] 已自动生成可自由编辑的场景：" + ScenePath);
+            }
+            finally
+            {
+                if (previous.IsValid() && previous.isLoaded) SceneManager.SetActiveScene(previous);
+                EditorSceneManager.CloseScene(scene, true);
+            }
+        }
+
+        private static void AddWorldToBuildSettings()
+        {
             var scenes = EditorBuildSettings.scenes.Where(s => s.path != ScenePath).ToList();
             scenes.Insert(0, new EditorBuildSettingsScene(ScenePath, true));
             EditorBuildSettings.scenes = scenes.ToArray();
+        }
 
-            Debug.Log("[3D世界] 已创建 " + ScenePath + " 并设为启动场景。");
+        [MenuItem("3D世界/打开可编辑 World3D 场景")]
+        public static void OpenWorldScene()
+        {
+            if (!WorldSceneExists())
+            {
+                CreateWorldScene();
+                return;
+            }
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        }
+
+        private static bool WorldSceneExists()
+        {
+            return AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null;
         }
 
         [MenuItem("3D世界/删除世界存档")]

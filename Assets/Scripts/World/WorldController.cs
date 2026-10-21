@@ -59,6 +59,11 @@ namespace VN.World
                 LevelBuilder.BuildPrototype(Level);
             }
 
+            // 场景里的角色仅用于 Edit Mode 摆放出生点，运行时换成真正可操控玩家。
+            foreach (var child in Level.GetComponentsInChildren<Transform>(true))
+                if (child.name == "PlayerPreview_EDIT_ONLY")
+                    child.gameObject.SetActive(false);
+
             // 玩家位置：读档 or 出生点
             Vector3 pos = Level.SpawnPosition;
             float yaw = Level.SpawnYaw;

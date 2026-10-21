@@ -9,7 +9,7 @@ namespace VN.World
     public class ThirdPersonCamera : MonoBehaviour
     {
         public Transform Target;
-        public Vector3 pivotOffset = new Vector3(0f, 1.6f, 0f);
+        public Vector3 pivotOffset = new Vector3(0f, 1.35f, 0f);
 
         [Header("旋转")]
         public float mouseSensitivity = 3f;
@@ -18,9 +18,9 @@ namespace VN.World
         public bool invertY = false;
 
         [Header("距离")]
-        public float distance = 5f;
-        public float minDistance = 1.5f;
-        public float maxDistance = 9f;
+        public float distance = 3.8f;
+        public float minDistance = 1.25f;
+        public float maxDistance = 7f;
         public float zoomSpeed = 2f;
 
         [Header("平滑 / 碰撞")]

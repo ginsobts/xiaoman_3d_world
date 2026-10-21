@@ -41,10 +41,23 @@ namespace VN
         {
             EnsureCamera();
             BuildCanvas();
+
+            // 3D 项目只复用 AVG 播放器和 JSON 分支格式，不继承旧项目的桌宠/锁死启动逻辑。
+            // 因此无论注册表或旧存档里记录了什么，都能稳定进入可移动的 3D 世界。
+            if (GameConfig.Use3DWorld)
+            {
+                State = new SaveState();
+                if (GameConfig.EnterWorldImmediately)
+                    EnterWorld(loadSave: WorldState.HasSave);
+                else
+                    ShowMainMenu();
+                return;
+            }
+
             Story = StoryLoader.Load(GameLanguage.MainStoryFile);
             State = SaveSystem.Load();
 
-            // 决定进入哪个界面。
+            // 以下仅为旧版纯 AVG / 桌宠流程。
             if (State.locked)
             {
                 if (SaveSystem.Tampered)
@@ -66,7 +79,7 @@ namespace VN
         {
             // 测试快捷键（打包版也生效）：
             // F9：直接进入桌宠模式做实时预览，不写存档标记，重启后恢复正常。
-            if (Input.GetKeyDown(KeyCode.F9))
+            if (!GameConfig.Use3DWorld && Input.GetKeyDown(KeyCode.F9))
             {
                 EnterPetMode();
             }
@@ -74,7 +87,7 @@ namespace VN
             // 任意时间连按三次 M 回到游戏开头（桌宠阶段也生效）；
             // 但玩家正在输入名字时不触发（否则 M 会被当成输入内容）。
             bool typingName = _vn != null && _vn.IsInputActive;
-            if (Input.GetKeyDown(KeyCode.M) && !typingName)
+            if (!GameConfig.Use3DWorld && Input.GetKeyDown(KeyCode.M) && !typingName)
             {
                 float now = Time.unscaledTime;
                 if (now - _lastMTime > 0.8f) _mCount = 0;
@@ -91,11 +104,11 @@ namespace VN
             // F12：清空所有结局标记并回主菜单。
             // F11：清空所有结局标记并直接进入 AVG 开头。
 #if UNITY_EDITOR
-            if (Input.GetKeyDown(KeyCode.F12))
+            if (!GameConfig.Use3DWorld && Input.GetKeyDown(KeyCode.F12))
             {
                 DevResetToMenu();
             }
-            if (Input.GetKeyDown(KeyCode.F11))
+            if (!GameConfig.Use3DWorld && Input.GetKeyDown(KeyCode.F11))
             {
                 DevResetToStoryStart();
             }
@@ -353,6 +366,14 @@ namespace VN
         // VNView 回调：到达带 ending 字段的节点。
         public void OnEnding(string endingType)
         {
+            if (GameConfig.Use3DWorld)
+            {
+                // 3D 世界不允许剧情结局把应用切成旧桌宠、锁死画面或悬浮 AVG。
+                // 有 ending 的世界剧情统一回到 3D 项目的菜单；普通对话结束由 WorldController 回到移动。
+                ShowMainMenu();
+                return;
+            }
+
             if (endingType == "pet")
             {
                 State.petMode = true;
