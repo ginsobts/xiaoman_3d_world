@@ -55,14 +55,24 @@ namespace VN
 
         private const float CharsPerSecond = 45f;
 
+        // 叠加模式：背景初始透明（露出底下的 3D 画面），节点指定 background 后才盖住。
+        private bool _overlay;
+
+        // 本视图在 Root 下创建的顶层 UI 物体，销毁时一并清理（叠加模式下不能靠 ClearScreen）。
+        private readonly List<GameObject> _ownedUI = new List<GameObject>();
+
         // 是否正在等玩家输入（如输入名字）。用于全局重开热键在输入时屏蔽。
         public bool IsInputActive => _inputShown;
 
+        /// <summary>当前剧情变量（只读视图），对话结束后可由外部同步回世界状态。</summary>
+        public IReadOnlyDictionary<string, string> Variables => _variables;
+
         public void Begin(StoryData story, string startNode, Action<string> onEnding,
-            Dictionary<string, string> seedVariables = null)
+            Dictionary<string, string> seedVariables = null, bool overlay = false)
         {
             _story = story;
             _onEnding = onEnding;
+            _overlay = overlay;
             if (seedVariables != null)
             {
                 foreach (var kv in seedVariables)
@@ -70,6 +80,43 @@ namespace VN
             }
             BuildUI();
             GoTo(startNode);
+        }
+
+        private void Update()
+        {
+            // 键盘推进：空格 / 回车（输入框激活时不处理，避免吞掉输入）
+            if (_inputShown) return;
+            if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+                Advance();
+        }
+
+        private void OnDestroy()
+        {
+            if (_voiceSource != null) _voiceSource.Stop();
+            foreach (var go in _ownedUI)
+                if (go != null) Destroy(go);
+            _ownedUI.Clear();
+        }
+
+        private T Own<T>(T component) where T : Component
+        {
+            if (component != null) _ownedUI.Add(component.gameObject);
+            return component;
+        }
+
+        private GameObject Own(GameObject go)
+        {
+            if (go != null) _ownedUI.Add(go);
+            return go;
+        }
+
+        /// <summary>对话结束：统一出口。ending 为空表示「普通结束」，由调用方决定去哪（旧流程=回主菜单）。</summary>
+        private void Finish(string ending)
+        {
+            if (_onEnding != null)
+                _onEnding.Invoke(ending ?? "");
+            else
+                GameManager.Instance.ShowMainMenu();
         }
 
         private void BuildUI()
@@ -80,21 +127,22 @@ namespace VN
             _voiceSource.playOnAwake = false;
             _voiceSource.spatialBlend = 0f;
 
-            _background = UITheme.AddImage("Background", _root, Color.black);
+            _background = Own(UITheme.AddImage("Background", _root, _overlay ? Color.clear : Color.black));
             UITheme.FullStretch(_background.rectTransform);
             _background.preserveAspect = false;
+            _background.raycastTarget = !_overlay;
 
-            var charGO = UITheme.NewUIObject("Characters", _root);
+            var charGO = Own(UITheme.NewUIObject("Characters", _root));
             _charLayer = charGO.GetComponent<RectTransform>();
             UITheme.FullStretch(_charLayer);
 
-            _dialoguePanel = UITheme.AddPanel("DialoguePanel", _root, new Color(1f, 1f, 1f, 0.9f));
+            _dialoguePanel = Own(UITheme.AddPanel("DialoguePanel", _root, new Color(1f, 1f, 1f, 0.9f)));
             _dialoguePanel.raycastTarget = false;
             UITheme.SetRect(_dialoguePanel.rectTransform,
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
                 new Vector2(-860, 50), new Vector2(860, 330));
 
-            _speakerPanel = UITheme.AddPanel("SpeakerPanel", _root, new Color(1f, 1f, 1f, 0.96f));
+            _speakerPanel = Own(UITheme.AddPanel("SpeakerPanel", _root, new Color(1f, 1f, 1f, 0.96f)));
             _speakerPanel.raycastTarget = false;
             UITheme.SetRect(_speakerPanel.rectTransform,
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
@@ -120,24 +168,24 @@ namespace VN
                 new Vector2(-60, 16), new Vector2(-20, 56));
 
             // 全屏点击捕获（推进对话），放在对话面板之上、选项之下
-            _clickCatcher = UITheme.AddImage("ClickCatcher", _root, new Color(0, 0, 0, 0));
+            _clickCatcher = Own(UITheme.AddImage("ClickCatcher", _root, new Color(0, 0, 0, 0)));
             UITheme.FullStretch(_clickCatcher.rectTransform);
             _clickCatcher.gameObject.AddComponent<ClickProxy>().Target = this;
 
             // 选项层
-            var choiceGO = UITheme.NewUIObject("Choices", _root);
+            var choiceGO = Own(UITheme.NewUIObject("Choices", _root));
             _choiceLayer = choiceGO.GetComponent<RectTransform>();
             UITheme.FullStretch(_choiceLayer);
             _choiceLayer.gameObject.SetActive(false);
 
-            var inputGO = UITheme.NewUIObject("PlayerInput", _root);
+            var inputGO = Own(UITheme.NewUIObject("PlayerInput", _root));
             _inputLayer = inputGO.GetComponent<RectTransform>();
             UITheme.FullStretch(_inputLayer);
             _inputLayer.gameObject.SetActive(false);
 
             // 历史记录按钮（右上角小 UI）
-            _historyButton = UITheme.AddButton("HistoryButton", _root,
-                GameLanguage.IsEnglish ? "History" : "历史", 28, OpenHistory);
+            _historyButton = Own(UITheme.AddButton("HistoryButton", _root,
+                GameLanguage.IsEnglish ? "History" : "历史", 28, OpenHistory));
             UITheme.SetRect(_historyButton.GetComponent<RectTransform>(),
                 new Vector2(1f, 1f), new Vector2(1f, 1f),
                 new Vector2(-172, -92), new Vector2(-24, -24));
@@ -147,7 +195,7 @@ namespace VN
 
         private void BuildHistoryUI()
         {
-            var histGO = UITheme.NewUIObject("HistoryLayer", _root);
+            var histGO = Own(UITheme.NewUIObject("HistoryLayer", _root));
             _historyLayer = histGO.GetComponent<RectTransform>();
             UITheme.FullStretch(_historyLayer);
 
@@ -223,14 +271,14 @@ namespace VN
             if (node == null)
             {
                 Debug.LogError("找不到剧情节点: " + id);
-                GameManager.Instance.ShowMainMenu();
+                Finish("");
                 return;
             }
 
             if (redirectDepth > 16)
             {
                 Debug.LogError("条件跳转层数过深，可能出现了循环: " + id);
-                GameManager.Instance.ShowMainMenu();
+                Finish("");
                 return;
             }
 
@@ -462,14 +510,14 @@ namespace VN
             // 结局判定
             if (!string.IsNullOrEmpty(_node.ending))
             {
-                _onEnding?.Invoke(_node.ending);
+                Finish(_node.ending);
                 return;
             }
 
             if (!string.IsNullOrEmpty(_node.next))
                 GoTo(_node.next);
             else
-                GameManager.Instance.ShowMainMenu(); // 没有 next 也没有结局，回主菜单
+                Finish(""); // 没有 next 也没有结局：普通结束（旧流程回主菜单；3D 世界回到探索）
         }
 
         private void OpenHistory()
@@ -594,7 +642,7 @@ namespace VN
             if (!string.IsNullOrEmpty(_node.next))
                 GoTo(_node.next);
             else
-                GameManager.Instance.ShowMainMenu();
+                Finish("");
         }
 
         private void ShowChoices(List<Choice> choices)
@@ -632,7 +680,7 @@ namespace VN
 
             string next = choice.next;
             if (string.IsNullOrEmpty(next))
-                GameManager.Instance.ShowMainMenu();
+                Finish("");
             else
                 GoTo(next);
         }

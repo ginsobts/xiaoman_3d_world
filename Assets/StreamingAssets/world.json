@@ -1,0 +1,131 @@
+{
+  "startNode": "intro_1",
+  "nodes": [
+    {
+      "id": "intro_1",
+      "text": "这里是……一个还没完工的世界。\n脚下是地面，远处有树，北边似乎有一堵墙。",
+      "next": "intro_2"
+    },
+    {
+      "id": "intro_2",
+      "text": "用 WASD 走走看，靠近东西时按 E 可以互动。\n按 Esc 可以暂停和保存。",
+      "setVariables": [
+        { "name": "intro_done", "operation": "set", "value": "1" }
+      ]
+    },
+
+    {
+      "id": "xiaoman_meet",
+      "conditionalNexts": [
+        { "variable": "talked_xiaoman", "equals": "1", "next": "xiaoman_again" }
+      ],
+      "characters": [
+        { "sprite": "xiaoman_curious", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "咦？你……真的能走到这里来了？",
+      "next": "xiaoman_2"
+    },
+    {
+      "id": "xiaoman_2",
+      "characters": [
+        { "sprite": "xiaoman_gentle", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "这里和以前那个只有对话框的地方不一样呢。\n你可以到处走走，想问我什么吗？",
+      "choices": [
+        {
+          "text": "这里是哪里？",
+          "next": "xiaoman_where",
+          "setVariables": [ { "name": "talked_xiaoman", "operation": "set", "value": "1" } ]
+        },
+        {
+          "text": "你怎么会在这？",
+          "next": "xiaoman_why",
+          "setVariables": [ { "name": "talked_xiaoman", "operation": "set", "value": "1" } ]
+        }
+      ]
+    },
+    {
+      "id": "xiaoman_where",
+      "characters": [
+        { "sprite": "xiaoman_proud", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "一个还在搭建的 3D 世界。\n北边有一扇门，钥匙好像掉在东南边的草丛里了。",
+      "next": "xiaoman_end"
+    },
+    {
+      "id": "xiaoman_why",
+      "characters": [
+        { "sprite": "xiaoman_amused", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "因为是你把我带过来的呀。\n对了，北边那扇门的钥匙，好像掉在东南边的草丛里了。",
+      "next": "xiaoman_end"
+    },
+    {
+      "id": "xiaoman_end",
+      "characters": [
+        { "sprite": "xiaoman_gentle", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "去探索吧，我就在这里等你。"
+    },
+    {
+      "id": "xiaoman_again",
+      "conditionalNexts": [
+        { "variable": "door_open_north", "equals": "1", "next": "xiaoman_dooropen" },
+        { "variable": "has_key", "equals": "1", "next": "xiaoman_haskey" }
+      ],
+      "characters": [
+        { "sprite": "xiaoman_quiet", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "门在北边哦，钥匙在东南边的草丛里。"
+    },
+    {
+      "id": "xiaoman_haskey",
+      "characters": [
+        { "sprite": "xiaoman_relieved", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "找到钥匙了？快去北边把门打开看看吧。"
+    },
+    {
+      "id": "xiaoman_dooropen",
+      "characters": [
+        { "sprite": "xiaoman_amused", "position": "right" }
+      ],
+      "speaker": "小满",
+      "text": "门已经开了，里面有什么？……去看看就知道啦。"
+    },
+
+    {
+      "id": "sign_1",
+      "text": "木牌上写着：\n「北 —— 门。东南 —— 草丛。」"
+    },
+
+    {
+      "id": "door_locked",
+      "text": "门锁着。看起来需要一把钥匙。"
+    },
+
+    {
+      "id": "crystal_1",
+      "background": "bg_warm",
+      "characters": [
+        { "sprite": "xiaoman_gentle", "position": "center" }
+      ],
+      "speaker": "小满",
+      "text": "你找到这里了。\n这就是目前能走到的全部……接下来的故事，由你来写。",
+      "next": "crystal_2"
+    },
+    {
+      "id": "crystal_2",
+      "keepCharacters": true,
+      "text": "（演示到此结束，返回主菜单。）",
+      "ending": "menu"
+    }
+  ]
+}

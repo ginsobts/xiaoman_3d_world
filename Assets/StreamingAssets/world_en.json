@@ -1,0 +1,131 @@
+{
+  "startNode": "intro_1",
+  "nodes": [
+    {
+      "id": "intro_1",
+      "text": "This is... a world that isn't finished yet.\nGround under your feet, trees in the distance, and what looks like a wall to the north.",
+      "next": "intro_2"
+    },
+    {
+      "id": "intro_2",
+      "text": "Try walking with WASD. Press E near things to interact.\nEsc pauses the game and lets you save.",
+      "setVariables": [
+        { "name": "intro_done", "operation": "set", "value": "1" }
+      ]
+    },
+
+    {
+      "id": "xiaoman_meet",
+      "conditionalNexts": [
+        { "variable": "talked_xiaoman", "equals": "1", "next": "xiaoman_again" }
+      ],
+      "characters": [
+        { "sprite": "xiaoman_curious", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "Huh? You... actually walked all the way here?",
+      "next": "xiaoman_2"
+    },
+    {
+      "id": "xiaoman_2",
+      "characters": [
+        { "sprite": "xiaoman_gentle", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "This place is different from the one with only a dialogue box.\nYou can walk around. Want to ask me something?",
+      "choices": [
+        {
+          "text": "Where is this?",
+          "next": "xiaoman_where",
+          "setVariables": [ { "name": "talked_xiaoman", "operation": "set", "value": "1" } ]
+        },
+        {
+          "text": "Why are you here?",
+          "next": "xiaoman_why",
+          "setVariables": [ { "name": "talked_xiaoman", "operation": "set", "value": "1" } ]
+        }
+      ]
+    },
+    {
+      "id": "xiaoman_where",
+      "characters": [
+        { "sprite": "xiaoman_proud", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "A 3D world still under construction.\nThere's a door to the north. I think the key fell into the grass to the southeast.",
+      "next": "xiaoman_end"
+    },
+    {
+      "id": "xiaoman_why",
+      "characters": [
+        { "sprite": "xiaoman_amused", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "Because you brought me here.\nOh, and the key to that door in the north seems to have fallen into the grass to the southeast.",
+      "next": "xiaoman_end"
+    },
+    {
+      "id": "xiaoman_end",
+      "characters": [
+        { "sprite": "xiaoman_gentle", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "Go explore. I'll be waiting right here."
+    },
+    {
+      "id": "xiaoman_again",
+      "conditionalNexts": [
+        { "variable": "door_open_north", "equals": "1", "next": "xiaoman_dooropen" },
+        { "variable": "has_key", "equals": "1", "next": "xiaoman_haskey" }
+      ],
+      "characters": [
+        { "sprite": "xiaoman_quiet", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "The door is to the north. The key is in the grass to the southeast."
+    },
+    {
+      "id": "xiaoman_haskey",
+      "characters": [
+        { "sprite": "xiaoman_relieved", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "You found the key? Go open the door in the north and take a look."
+    },
+    {
+      "id": "xiaoman_dooropen",
+      "characters": [
+        { "sprite": "xiaoman_amused", "position": "right" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "The door is open. What's inside? ...Go and see for yourself."
+    },
+
+    {
+      "id": "sign_1",
+      "text": "The sign reads:\n\"North - the door. Southeast - the grass.\""
+    },
+
+    {
+      "id": "door_locked",
+      "text": "The door is locked. It looks like it needs a key."
+    },
+
+    {
+      "id": "crystal_1",
+      "background": "bg_warm",
+      "characters": [
+        { "sprite": "xiaoman_gentle", "position": "center" }
+      ],
+      "speaker": "Xiaoman",
+      "text": "You made it here.\nThis is as far as the world goes for now... The rest of the story is yours to write.",
+      "next": "crystal_2"
+    },
+    {
+      "id": "crystal_2",
+      "keepCharacters": true,
+      "text": "(End of demo. Returning to the main menu.)",
+      "ending": "menu"
+    }
+  ]
+}

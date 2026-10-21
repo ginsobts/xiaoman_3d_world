@@ -144,6 +144,24 @@ namespace VN
             ? "Today is \"" + title + "\"!"
             : "今天就是【" + title + "】啦！";
 
+        // ---------- 3D 探索世界 ----------
+        public static string ContinueGame => IsEnglish ? "Continue" : "继续游戏";
+        public static string ControlsHint => IsEnglish
+            ? "WASD  Move\nShift  Run\nSpace  Jump\nE  Interact\nMouse  Camera\nEsc  Menu"
+            : "WASD  移动\nShift  奔跑\n空格  跳跃\nE  互动\n鼠标  视角\nEsc  菜单";
+        public static string InteractPrompt(string target) => IsEnglish ? "[E] Examine " + target : "[E] 调查 " + target;
+        public static string TalkPrompt(string target) => IsEnglish ? "[E] Talk to " + target : "[E] 和" + target + "说话";
+        public static string PickupPrompt(string target) => IsEnglish ? "[E] Pick up " + target : "[E] 捡起" + target;
+        public static string OpenDoorPrompt(string target) => IsEnglish ? "[E] Open " + target : "[E] 打开" + target;
+        public static string PickedUp(string item) => IsEnglish ? "Got: " + item : "获得了【" + item + "】";
+        public static string DoorLocked => IsEnglish ? "It's locked." : "门锁着。";
+        public static string DoorOpened => IsEnglish ? "The door opened." : "门开了。";
+        public static string Paused => IsEnglish ? "Paused" : "暂停";
+        public static string Resume => IsEnglish ? "Resume" : "继续";
+        public static string BackToMainMenu => IsEnglish ? "Main Menu" : "回主菜单";
+        public static string Saved => IsEnglish ? "Game saved." : "已保存。";
+        public static string Loaded => IsEnglish ? "Save loaded." : "已读取存档。";
+
         public static string OpeningIntro => IsEnglish
             ? "Welcome. You are about to experience a conversation of about five minutes.\n\n"
               + "The person speaking with you is Xiaoman. She has been waiting for you for a long time.\n\n"

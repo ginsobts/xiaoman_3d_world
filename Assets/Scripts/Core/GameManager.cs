@@ -2,10 +2,11 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using VN.World;
 
 namespace VN
 {
-    public enum GameScreen { MainMenu, Story, Pet, Locked }
+    public enum GameScreen { MainMenu, Story, Pet, Locked, World }
 
     public class GameManager : MonoBehaviour
     {
@@ -20,6 +21,10 @@ namespace VN
         private VNView _vn;
         private DesktopPet _pet;
         private EndingAvgView _avg;
+        private WorldController _world;
+
+        /// <summary>当前正在播放的 AVG 对话（没有则为 null）。</summary>
+        public VNView CurrentDialogue => _vn;
 
         // 连按三次 M 回到游戏开头的计数
         private int _mCount;
@@ -153,6 +158,12 @@ namespace VN
                 _avg = null;
             }
 
+            if (_world != null)
+            {
+                Destroy(_world.gameObject);
+                _world = null;
+            }
+
             for (int i = Root.childCount - 1; i >= 0; i--)
                 Destroy(Root.GetChild(i).gameObject);
         }
@@ -205,7 +216,10 @@ namespace VN
         public void ShowMainMenu()
         {
             ClearScreen();
-            MainMenuUI.Build(Root, OnStartGame, QuitGame, ToggleLanguageOnMenu, Story != null);
+            bool storyOk = GameConfig.Use3DWorld || Story != null;
+            UnityEngine.Events.UnityAction onContinue =
+                (GameConfig.Use3DWorld && WorldState.HasSave) ? (UnityEngine.Events.UnityAction)ContinueWorld : null;
+            MainMenuUI.Build(Root, OnStartGame, QuitGame, ToggleLanguageOnMenu, storyOk, onContinue);
         }
 
         private void ToggleLanguageOnMenu()
@@ -217,6 +231,12 @@ namespace VN
 
         private void OnStartGame()
         {
+            if (GameConfig.Use3DWorld)
+            {
+                EnterWorld(loadSave: false);
+                return;
+            }
+
             if (Story == null)
             {
                 ShowLockedScreen(GameLanguage.MissingStoryDetail);
@@ -224,6 +244,43 @@ namespace VN
             }
             ClearScreen();
             StartCoroutine(OpeningIntroThenStartStory());
+        }
+
+        private void ContinueWorld() => EnterWorld(loadSave: true);
+
+        // ---------- 3D 探索世界 ----------
+
+        /// <summary>进入 3D 世界。loadSave=true 读取世界存档（位置 + 变量）。</summary>
+        public void EnterWorld(bool loadSave)
+        {
+            ClearScreen();
+            var go = new GameObject("World");
+            go.transform.SetParent(transform, false);
+            _world = go.AddComponent<WorldController>();
+            _world.Init(_camera, loadSave);
+        }
+
+        /// <summary>
+        /// 以叠加层形式在当前画面上播放 AVG 对话（3D 世界里的对话用这个）。
+        /// 背景透明，直到剧本节点指定 background 才盖住 3D 画面。
+        /// </summary>
+        public VNView StartDialogueOverlay(StoryData story, string startNode, System.Action<string> onEnding,
+            System.Collections.Generic.Dictionary<string, string> variables)
+        {
+            CloseDialogue();
+            var vnGO = new GameObject("VNView");
+            vnGO.transform.SetParent(transform, false);
+            _vn = vnGO.AddComponent<VNView>();
+            _vn.Begin(story, startNode, onEnding, variables, overlay: true);
+            return _vn;
+        }
+
+        /// <summary>关闭当前对话层（只销毁对话 UI，不影响其它界面）。</summary>
+        public void CloseDialogue()
+        {
+            if (_vn == null) return;
+            Destroy(_vn.gameObject);
+            _vn = null;
         }
 
         private IEnumerator OpeningIntroThenStartStory()
