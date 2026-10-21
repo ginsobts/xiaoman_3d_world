@@ -61,20 +61,34 @@ namespace VN.Editor
             director.ApplyForPosition(greenhouse.origin + greenhouse.spawnLocal);
             if (director.Current.id != "greenhouse") throw new Exception("ApplyForPosition failed: " + director.Current.id);
 
-            // 参考图：每个 AI 候选都有设定图（人物要正反两面），没有设定图的能从原画裁出非空 PNG
+            // 参考图：两种来源都要能取到 —— 原画裁剪（每个候选都有 crop 框，裁出非空 PNG）与设定图（人物要正反两面）
             int sheets = 0, characters = 0;
-            foreach (var spec in ReferenceSceneLibrary.Props.Where(p => p.aiCandidate))
+            bool savedSource = AI3DImporter.PreferPainting;
+            try
             {
-                var images = AI3DImporter.LoadReferenceImages(spec, null);
-                if (images.Count == 0 || images.Any(i => i == null || i.Length < 1000)) throw new Exception("reference image empty " + spec.id);
-                if (spec.isCharacter)
+                AI3DImporter.PreferPainting = true;
+                foreach (var spec in ReferenceSceneLibrary.Props.Where(p => p.aiCandidate))
                 {
-                    characters++;
-                    if (images.Count < 2) throw new Exception("character needs front+back sheets " + spec.id);
-                    if (spec.animationActionIds == null || spec.animationActionIds.Length == 0) throw new Exception("character has no animation " + spec.id);
+                    if (!AI3DImporter.HasCrop(spec)) throw new Exception("no painting crop for " + spec.id);
+                    var crops = AI3DImporter.LoadReferenceImages(spec, null);
+                    if (crops.Count != 1 || crops[0] == null || crops[0].Length < 1000) throw new Exception("painting crop empty " + spec.id);
                 }
-                if (AI3DImporter.HasReferenceSheet(spec)) sheets++;
+                AI3DImporter.PreferPainting = false;
+                foreach (var spec in ReferenceSceneLibrary.Props.Where(p => p.aiCandidate))
+                {
+                    var images = AI3DImporter.LoadReferenceImages(spec, null);
+                    if (images.Count == 0 || images.Any(i => i == null || i.Length < 1000)) throw new Exception("reference image empty " + spec.id);
+                    if (spec.isCharacter)
+                    {
+                        characters++;
+                        if (images.Count < 2) throw new Exception("character needs front+back sheets " + spec.id);
+                        if (spec.animationActionIds == null || spec.animationActionIds.Length == 0) throw new Exception("character has no animation " + spec.id);
+                        if (TripoProvider.PresetFor(spec.animationActionIds[0]).Length == 0) throw new Exception("no tripo preset " + spec.id);
+                    }
+                    if (AI3DImporter.HasReferenceSheet(spec)) sheets++;
+                }
             }
+            finally { AI3DImporter.PreferPainting = savedSource; }
             if (characters != 6) throw new Exception("character count " + characters);
 
             // 泼溅插件、GLB 读取、Marble 分支
@@ -101,6 +115,14 @@ namespace VN.Editor
             var back = MiniGlb.LoadMesh(glb, "roundtrip");
             if (back.vertexCount != cubeMesh.vertexCount || back.triangles.Length != cubeMesh.triangles.Length)
                 throw new Exception($"glb roundtrip mismatch v={back.vertexCount} t={back.triangles.Length}");
+            // 完整模型读取（AI 服务输出走这条路）：镜像到左手系后尺寸不变、法线朝外
+            var full = MiniGlb.LoadModel(glb, "roundtrip_full");
+            if (full.mesh.vertexCount != cubeMesh.vertexCount || full.materials.Count != 1 || (full.mesh.bounds.size - cubeMesh.bounds.size).magnitude > 1e-4f)
+                throw new Exception($"glb full load mismatch v={full.mesh.vertexCount} mats={full.materials.Count} size={full.mesh.bounds.size}");
+            var fn = full.mesh.normals; var fv = full.mesh.vertices;
+            for (int i = 0; i < fv.Length; i += 7)
+                if (Vector3.Dot(fn[i], fv[i]) < 0f) throw new Exception("glb full load: normals point inward (winding not flipped)");
+            UnityEngine.Object.DestroyImmediate(full.mesh);
             UnityEngine.Object.DestroyImmediate(cube);
             UnityEngine.Object.DestroyImmediate(back);
 

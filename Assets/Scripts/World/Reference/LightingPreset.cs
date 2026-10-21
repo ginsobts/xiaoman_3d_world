@@ -35,12 +35,22 @@ namespace VN.World
         public float exposure = 1.0f;
         public float saturation = 1.08f;
         public float contrast = 1.04f;
-        public float vignette = 0.55f;
-        public float grain = 0.025f;
-        public float softness = 0.18f;
+        public float vignette = 0.45f;
+        public float grain = 0.014f;
+        public float softness = 0.10f;
         public Color tint = Color.white;
         public Color shadows = new Color(0.05f, 0.03f, 0.12f, 0.35f);
         public Color highlights = new Color(0.12f, 0.09f, 0.0f, 0.35f);
+
+        [Header("细节增强")]
+        [Tooltip("屏幕空间环境光遮蔽强度：角落与接触面变暗，模型立体感明显增强")]
+        public float ambientOcclusion = 0.75f;
+        public float aoRadius = 0.6f;
+        [Tooltip("铅笔描边强度：按深度 / 法线突变画细线")]
+        public float outline = 0.35f;
+        [Tooltip("胶片曲线强度：高光不过曝、暗部不死黑")]
+        public float tonemap = 0.6f;
+        public Color inkColor = new Color(0.16f, 0.13f, 0.22f, 1f);
 
         public LightingPreset Clone()
         {
@@ -76,6 +86,11 @@ namespace VN.World
             r.tint = Color.Lerp(a.tint, b.tint, t);
             r.shadows = Color.Lerp(a.shadows, b.shadows, t);
             r.highlights = Color.Lerp(a.highlights, b.highlights, t);
+            r.ambientOcclusion = Mathf.Lerp(a.ambientOcclusion, b.ambientOcclusion, t);
+            r.aoRadius = Mathf.Lerp(a.aoRadius, b.aoRadius, t);
+            r.outline = Mathf.Lerp(a.outline, b.outline, t);
+            r.tonemap = Mathf.Lerp(a.tonemap, b.tonemap, t);
+            r.inkColor = Color.Lerp(a.inkColor, b.inkColor, t);
             return r;
         }
 
@@ -109,8 +124,8 @@ namespace VN.World
                 exposure = 1.05f,
                 saturation = 0.98f,
                 contrast = 1.02f,
-                vignette = 0.5f,
-                softness = 0.26f,
+                vignette = 0.42f,
+                softness = 0.14f,
                 tint = new Color(1f, 0.99f, 0.9f),
                 shadows = new Color(0.02f, 0.08f, 0.02f, 0.35f),
                 highlights = new Color(0.14f, 0.12f, 0.0f, 0.4f),
@@ -140,7 +155,7 @@ namespace VN.World
                 saturation = 0.9f,
                 contrast = 0.98f,
                 vignette = 0.35f,
-                softness = 0.2f,
+                softness = 0.11f,
                 tint = new Color(0.96f, 0.99f, 1f),
                 shadows = new Color(0.0f, 0.05f, 0.14f, 0.35f),
                 highlights = new Color(0.1f, 0.1f, 0.08f, 0.3f),
@@ -169,8 +184,8 @@ namespace VN.World
                 exposure = 1.0f,
                 saturation = 1.05f,
                 contrast = 1.05f,
-                vignette = 0.5f,
-                softness = 0.28f,
+                vignette = 0.42f,
+                softness = 0.15f,
                 tint = new Color(1f, 1f, 0.92f),
                 shadows = new Color(0.02f, 0.1f, 0.02f, 0.4f),
                 highlights = new Color(0.14f, 0.1f, 0.0f, 0.4f),
@@ -199,8 +214,8 @@ namespace VN.World
                 exposure = 0.98f,
                 saturation = 1.0f,
                 contrast = 1.1f,
-                vignette = 0.7f,
-                softness = 0.12f,
+                vignette = 0.42f,
+                softness = 0.08f,
                 tint = new Color(1f, 0.97f, 0.92f),
                 shadows = new Color(0.1f, 0.05f, 0.0f, 0.35f),
                 highlights = new Color(0.0f, 0.05f, 0.12f, 0.3f),
@@ -230,7 +245,7 @@ namespace VN.World
                 saturation = 1.0f,
                 contrast = 1.06f,
                 vignette = 0.45f,
-                softness = 0.24f,
+                softness = 0.13f,
                 tint = new Color(1f, 0.99f, 0.93f),
                 shadows = new Color(0.0f, 0.06f, 0.1f, 0.3f),
                 highlights = new Color(0.14f, 0.11f, 0.02f, 0.45f),

@@ -17,24 +17,8 @@ namespace VN.EditorTools.AI3D
 
         public static Mesh LoadMesh(byte[] glb, string name = "GlbMesh")
         {
-            if (glb == null || glb.Length < 20 || BitConverter.ToUInt32(glb, 0) != Magic) throw new Exception("不是 GLB 文件");
-            int offset = 12;
-            string jsonText = null;
-            int binStart = -1, binLength = 0;
-            while (offset + 8 <= glb.Length)
-            {
-                int len = (int)BitConverter.ToUInt32(glb, offset);
-                uint type = BitConverter.ToUInt32(glb, offset + 4);
-                offset += 8;
-                if (type == ChunkJson) jsonText = Encoding.UTF8.GetString(glb, offset, len);
-                else if (type == ChunkBin && binStart < 0) { binStart = offset; binLength = len; }
-                offset += len;
-            }
-            if (jsonText == null) throw new Exception("GLB 里没有 JSON 块");
-            var root = MiniJson.ParseObject(jsonText);
-            if (root == null) throw new Exception("GLB JSON 解析失败");
-
-            var ctx = new Context { bytes = glb, binStart = binStart, binLength = binLength, root = root };
+            var ctx = OpenContext(glb);
+            var root = ctx.root;
             var vertices = new List<Vector3>();
             var indices = new List<int>();
 
@@ -62,6 +46,293 @@ namespace VN.EditorTools.AI3D
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
             return mesh;
+        }
+
+        // ---------- 完整模型（网格 + 法线 + UV + 内嵌贴图） ----------
+
+        /// <summary>GLB 里一个材质对应的贴图集合（可能为空）。</summary>
+        public class GlbMaterial
+        {
+            public string name;
+            public Color baseColorFactor = Color.white;
+            public byte[] baseColor;   // PNG/JPEG 原始字节
+            public byte[] normal;
+            public byte[] metallicRoughness;
+            public float roughnessFactor = 1f;
+        }
+
+        public class GlbModel
+        {
+            public Mesh mesh;
+            /// <summary>与 mesh 子网格一一对应。</summary>
+            public List<GlbMaterial> materials = new List<GlbMaterial>();
+        }
+
+        /// <summary>
+        /// 读取 AI 服务输出的 GLB（Hunyuan3D / Tripo 等）：按材质分子网格，带法线、UV 与内嵌贴图。
+        /// glTF 为右手系 +Y 向上，这里翻转 X 并反转三角形绕序转到 Unity 左手系；UV 的 V 轴翻转。
+        /// 不处理蒙皮与动画（带骨骼的人物请走 FBX）。
+        /// </summary>
+        public static GlbModel LoadModel(byte[] glb, string name = "GlbModel")
+        {
+            var ctx = OpenContext(glb);
+            var root = ctx.root;
+            var materialsJson = root.TryGetValue("materials", out var mo) ? mo as List<object> : null;
+
+            // 按材质索引聚合顶点数据
+            var groups = new SortedDictionary<int, SubmeshData>();
+            void Visit(int meshIndex, Matrix4x4 world)
+            {
+                var meshes = root["meshes"] as List<object>;
+                if (meshes == null || meshIndex < 0 || meshIndex >= meshes.Count) return;
+                var prims = MiniJson.Get(meshes[meshIndex], "primitives") as List<object>;
+                if (prims == null) return;
+                Matrix4x4 normalMat = world.inverse.transpose;
+                foreach (var p in prims)
+                {
+                    int mode = (int)MiniJson.GetNumber(p, "mode", 4);
+                    if (mode != 4) continue;
+                    var posIdx = MiniJson.Get(p, "attributes.POSITION");
+                    if (posIdx == null) continue;
+                    int matIndex = (int)MiniJson.GetNumber(p, "material", -1);
+                    if (!groups.TryGetValue(matIndex, out var g)) { g = new SubmeshData(); groups[matIndex] = g; }
+
+                    var positions = ReadVec3(ctx, Convert.ToInt32(posIdx));
+                    var nIdx = MiniJson.Get(p, "attributes.NORMAL");
+                    var normals = nIdx != null ? ReadVec3(ctx, Convert.ToInt32(nIdx)) : null;
+                    var uvIdx = MiniJson.Get(p, "attributes.TEXCOORD_0");
+                    var uvs = uvIdx != null ? ReadVec2(ctx, Convert.ToInt32(uvIdx)) : null;
+                    var colIdx = MiniJson.Get(p, "attributes.COLOR_0");
+                    var colors = colIdx != null ? ReadColors(ctx, Convert.ToInt32(colIdx)) : null;
+
+                    int baseIndex = g.vertices.Count;
+                    for (int i = 0; i < positions.Length; i++)
+                    {
+                        Vector3 wp = world.MultiplyPoint3x4(positions[i]);
+                        g.vertices.Add(new Vector3(-wp.x, wp.y, wp.z));
+                        if (normals != null && i < normals.Length)
+                        {
+                            Vector3 wn = normalMat.MultiplyVector(normals[i]).normalized;
+                            g.normals.Add(new Vector3(-wn.x, wn.y, wn.z));
+                        }
+                        else g.hasAllNormals = false;
+                        if (uvs != null && i < uvs.Length) g.uvs.Add(new Vector2(uvs[i].x, 1f - uvs[i].y));
+                        else g.uvs.Add(Vector2.zero);
+                        g.colors.Add(colors != null && i < colors.Length ? colors[i] : Color.white);
+                        if (colors != null) g.hasColors = true;
+                    }
+                    var indObj = MiniJson.Get(p, "indices");
+                    int[] ind = indObj != null ? ReadIndices(ctx, Convert.ToInt32(indObj)) : Sequence(positions.Length);
+                    for (int i = 0; i + 2 < ind.Length; i += 3)
+                    {
+                        // 翻转 X 后需要反转绕序
+                        g.indices.Add(baseIndex + ind[i]);
+                        g.indices.Add(baseIndex + ind[i + 2]);
+                        g.indices.Add(baseIndex + ind[i + 1]);
+                    }
+                }
+            }
+
+            var scenes = root.TryGetValue("scenes", out var sc) ? sc as List<object> : null;
+            var nodes = root.TryGetValue("nodes", out var nd) ? nd as List<object> : null;
+            if (scenes != null && scenes.Count > 0 && nodes != null)
+            {
+                int sceneIndex = (int)MiniJson.GetNumber(root, "scene", 0);
+                if (sceneIndex < 0 || sceneIndex >= scenes.Count) sceneIndex = 0;
+                var sceneNodes = MiniJson.Get(scenes[sceneIndex], "nodes") as List<object>;
+                if (sceneNodes != null)
+                    foreach (var n in sceneNodes) VisitNodeFull(nodes, Convert.ToInt32(n), Matrix4x4.identity, Visit, 0);
+            }
+            else if (root.TryGetValue("meshes", out var ms) && ms is List<object> meshes)
+            {
+                for (int i = 0; i < meshes.Count; i++) Visit(i, Matrix4x4.identity);
+            }
+            if (groups.Count == 0) throw new Exception("GLB 里没有三角网格");
+
+            // 合并成一个 Mesh，多子网格
+            var model = new GlbModel();
+            var allV = new List<Vector3>(); var allN = new List<Vector3>(); var allUv = new List<Vector2>(); var allC = new List<Color>();
+            var subIndices = new List<int[]>();
+            bool anyColors = false, allNormals = true;
+            foreach (var kv in groups)
+            {
+                var g = kv.Value;
+                int offset = allV.Count;
+                allV.AddRange(g.vertices);
+                if (g.hasAllNormals && g.normals.Count == g.vertices.Count) allN.AddRange(g.normals); else allNormals = false;
+                allUv.AddRange(g.uvs);
+                allC.AddRange(g.colors);
+                anyColors |= g.hasColors;
+                var idx = new int[g.indices.Count];
+                for (int i = 0; i < idx.Length; i++) idx[i] = g.indices[i] + offset;
+                subIndices.Add(idx);
+                model.materials.Add(ReadMaterial(ctx, materialsJson, kv.Key));
+            }
+
+            var mesh = new Mesh { name = name };
+            mesh.indexFormat = allV.Count > 65000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;
+            mesh.SetVertices(allV);
+            mesh.SetUVs(0, allUv);
+            if (anyColors) mesh.SetColors(allC);
+            mesh.subMeshCount = subIndices.Count;
+            for (int i = 0; i < subIndices.Count; i++) mesh.SetTriangles(subIndices[i], i, false);
+            if (allNormals && allN.Count == allV.Count) mesh.SetNormals(allN); else mesh.RecalculateNormals();
+            mesh.RecalculateTangents();
+            mesh.RecalculateBounds();
+            model.mesh = mesh;
+            return model;
+        }
+
+        private class SubmeshData
+        {
+            public readonly List<Vector3> vertices = new List<Vector3>();
+            public readonly List<Vector3> normals = new List<Vector3>();
+            public readonly List<Vector2> uvs = new List<Vector2>();
+            public readonly List<Color> colors = new List<Color>();
+            public readonly List<int> indices = new List<int>();
+            public bool hasAllNormals = true;
+            public bool hasColors;
+        }
+
+        private static int[] Sequence(int n)
+        {
+            var r = new int[n];
+            for (int i = 0; i < n; i++) r[i] = i;
+            return r;
+        }
+
+        private static void VisitNodeFull(List<object> nodes, int index, Matrix4x4 parent, Action<int, Matrix4x4> visitMesh, int depth)
+        {
+            if (depth > 64 || index < 0 || index >= nodes.Count) return;
+            var node = nodes[index] as Dictionary<string, object>;
+            if (node == null) return;
+            Matrix4x4 world = parent * NodeMatrix(node);
+            if (node.TryGetValue("mesh", out var m)) visitMesh(Convert.ToInt32(m), world);
+            if (node.TryGetValue("children", out var ch) && ch is List<object> children)
+                foreach (var c in children) VisitNodeFull(nodes, Convert.ToInt32(c), world, visitMesh, depth + 1);
+        }
+
+        private static GlbMaterial ReadMaterial(Context ctx, List<object> materials, int index)
+        {
+            var result = new GlbMaterial();
+            if (materials == null || index < 0 || index >= materials.Count) return result;
+            var mat = materials[index] as Dictionary<string, object>;
+            if (mat == null) return result;
+            result.name = MiniJson.GetString(mat, "name");
+            var factor = MiniJson.Get(mat, "pbrMetallicRoughness.baseColorFactor") as List<object>;
+            if (factor != null && factor.Count >= 3)
+                result.baseColorFactor = new Color(Convert.ToSingle(factor[0]), Convert.ToSingle(factor[1]), Convert.ToSingle(factor[2]), factor.Count > 3 ? Convert.ToSingle(factor[3]) : 1f);
+            result.roughnessFactor = (float)MiniJson.GetNumber(mat, "pbrMetallicRoughness.roughnessFactor", 1.0);
+            result.baseColor = ReadImage(ctx, MiniJson.Get(mat, "pbrMetallicRoughness.baseColorTexture.index"));
+            result.metallicRoughness = ReadImage(ctx, MiniJson.Get(mat, "pbrMetallicRoughness.metallicRoughnessTexture.index"));
+            result.normal = ReadImage(ctx, MiniJson.Get(mat, "normalTexture.index"));
+            return result;
+        }
+
+        private static byte[] ReadImage(Context ctx, object textureIndexObj)
+        {
+            if (textureIndexObj == null) return null;
+            var textures = ctx.root.TryGetValue("textures", out var to) ? to as List<object> : null;
+            var images = ctx.root.TryGetValue("images", out var io) ? io as List<object> : null;
+            if (textures == null || images == null) return null;
+            int ti = Convert.ToInt32(textureIndexObj);
+            if (ti < 0 || ti >= textures.Count) return null;
+            var srcObj = MiniJson.Get(textures[ti], "source");
+            if (srcObj == null) return null;
+            int si = Convert.ToInt32(srcObj);
+            if (si < 0 || si >= images.Count) return null;
+            var img = images[si] as Dictionary<string, object>;
+            if (img == null) return null;
+            if (img.TryGetValue("bufferView", out var bvo))
+            {
+                var views = ctx.root["bufferViews"] as List<object>;
+                var view = views[Convert.ToInt32(bvo)] as Dictionary<string, object>;
+                int viewOffset = (int)MiniJson.GetNumber(view, "byteOffset", 0);
+                int len = (int)MiniJson.GetNumber(view, "byteLength", 0);
+                if (ctx.binStart < 0 || len <= 0) return null;
+                var bytes = new byte[len];
+                Buffer.BlockCopy(ctx.bytes, ctx.binStart + viewOffset, bytes, 0, len);
+                return bytes;
+            }
+            string uri = MiniJson.GetString(img, "uri");
+            if (!string.IsNullOrEmpty(uri) && uri.StartsWith("data:"))
+            {
+                int comma = uri.IndexOf(',');
+                if (comma > 0) return Convert.FromBase64String(uri.Substring(comma + 1));
+            }
+            return null;
+        }
+
+        private static Context OpenContext(byte[] glb)
+        {
+            if (glb == null || glb.Length < 20 || BitConverter.ToUInt32(glb, 0) != Magic) throw new Exception("不是 GLB 文件");
+            int offset = 12;
+            string jsonText = null;
+            int binStart = -1, binLength = 0;
+            while (offset + 8 <= glb.Length)
+            {
+                int len = (int)BitConverter.ToUInt32(glb, offset);
+                uint type = BitConverter.ToUInt32(glb, offset + 4);
+                offset += 8;
+                if (type == ChunkJson) jsonText = Encoding.UTF8.GetString(glb, offset, len);
+                else if (type == ChunkBin && binStart < 0) { binStart = offset; binLength = len; }
+                offset += len;
+            }
+            if (jsonText == null) throw new Exception("GLB 里没有 JSON 块");
+            var root = MiniJson.ParseObject(jsonText);
+            if (root == null) throw new Exception("GLB JSON 解析失败");
+            return new Context { bytes = glb, binStart = binStart, binLength = binLength, root = root };
+        }
+
+        private static Vector2[] ReadVec2(Context ctx, int accessorIndex)
+        {
+            var accessors = ctx.root["accessors"] as List<object>;
+            int componentType = (int)MiniJson.GetNumber(accessors[accessorIndex], "componentType");
+            bool normalized = MiniJson.Get(accessors[accessorIndex], "normalized") is bool b && b;
+            int compSize = componentType == 5126 ? 4 : componentType == 5123 ? 2 : 1;
+            var (offset, stride, count, _) = Accessor(ctx, accessorIndex, compSize * 2);
+            var result = new Vector2[count];
+            for (int i = 0; i < count; i++)
+            {
+                int o = offset + i * stride;
+                result[i] = new Vector2(ReadComponent(ctx.bytes, o, componentType, normalized), ReadComponent(ctx.bytes, o + compSize, componentType, normalized));
+            }
+            return result;
+        }
+
+        private static Color[] ReadColors(Context ctx, int accessorIndex)
+        {
+            var accessors = ctx.root["accessors"] as List<object>;
+            var acc = accessors[accessorIndex];
+            int componentType = (int)MiniJson.GetNumber(acc, "componentType");
+            bool normalized = MiniJson.Get(acc, "normalized") is bool b && b;
+            int comps = MiniJson.GetString(acc, "type") == "VEC3" ? 3 : 4;
+            int compSize = componentType == 5126 ? 4 : componentType == 5123 ? 2 : 1;
+            var (offset, stride, count, _) = Accessor(ctx, accessorIndex, compSize * comps);
+            var result = new Color[count];
+            for (int i = 0; i < count; i++)
+            {
+                int o = offset + i * stride;
+                float r = ReadComponent(ctx.bytes, o, componentType, true);
+                float g = ReadComponent(ctx.bytes, o + compSize, componentType, true);
+                float bl = ReadComponent(ctx.bytes, o + compSize * 2, componentType, true);
+                float a = comps == 4 ? ReadComponent(ctx.bytes, o + compSize * 3, componentType, true) : 1f;
+                result[i] = new Color(r, g, bl, a);
+            }
+            return result;
+        }
+
+        private static float ReadComponent(byte[] bytes, int o, int componentType, bool normalized)
+        {
+            switch (componentType)
+            {
+                case 5126: return BitConverter.ToSingle(bytes, o);
+                case 5123: { float v = BitConverter.ToUInt16(bytes, o); return normalized ? v / 65535f : v; }
+                case 5121: { float v = bytes[o]; return normalized ? v / 255f : v; }
+                case 5122: { float v = BitConverter.ToInt16(bytes, o); return normalized ? Mathf.Max(v / 32767f, -1f) : v; }
+                case 5120: { float v = (sbyte)bytes[o]; return normalized ? Mathf.Max(v / 127f, -1f) : v; }
+                default: return 0f;
+            }
         }
 
         private class Context

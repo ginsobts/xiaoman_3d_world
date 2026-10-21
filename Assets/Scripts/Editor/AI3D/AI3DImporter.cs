@@ -25,6 +25,7 @@ namespace VN.EditorTools.AI3D
         public const string PrefabFolder = "Assets/Resources/AI3D";
         public const string CropFolder = "Assets/Art/AI3D/Crops";
         public const string RefsFolder = "Assets/Art/AI3D/Refs";
+        public const string MeshFolder = "Assets/Resources/AI3D/Meshes";
         /// <summary>导入后绕 Y 轴补正的角度（有的服务商模型正面朝 -Z；在控制台里改一次即可）。</summary>
         public const string YawPref = "Xiaoman.AI3D.ModelYaw";
 
@@ -79,22 +80,45 @@ namespace VN.EditorTools.AI3D
 
         public static bool HasReferenceSheet(ReferencePropSpec spec) => ReferenceSheetPaths(spec).Count > 0;
 
-        /// <summary>优先用干净的设定图（可多视角），否则回退到从原画裁剪。</summary>
+        /// <summary>参考来源：0 = 直接裁剪原画（默认，贴图最贴近画作）；1 = 用 Refs 里的干净设定图（多视角，几何更稳）。</summary>
+        public const string SourcePref = "Xiaoman.AI3D.Source";
+        public static bool PreferPainting
+        {
+            get => EditorPrefs.GetInt(SourcePref, 0) == 0;
+            set => EditorPrefs.SetInt(SourcePref, value ? 0 : 1);
+        }
+
+        public static bool HasCrop(ReferencePropSpec spec) => spec.crop.width > 0f && spec.crop.height > 0f;
+
+        /// <summary>这个道具当前实际会用哪种参考（给界面显示）。</summary>
+        public static string DescribeSource(ReferencePropSpec spec)
+        {
+            int sheets = ReferenceSheetPaths(spec).Count;
+            bool crop = HasCrop(spec);
+            if (PreferPainting) return crop ? "原画裁剪" : sheets > 0 ? $"设定图×{sheets}（无裁剪框）" : "缺少参考";
+            return sheets > 0 ? $"设定图×{sheets}" : crop ? "原画裁剪（无设定图）" : "缺少参考";
+        }
+
+        /// <summary>按「参考来源」设置取图：原画裁剪优先或设定图优先，另一种作为回退。</summary>
         public static List<byte[]> LoadReferenceImages(ReferencePropSpec spec, Action<string> log)
         {
-            var paths = ReferenceSheetPaths(spec);
             var images = new List<byte[]>();
+            var paths = ReferenceSheetPaths(spec);
+            bool crop = HasCrop(spec);
+            bool usePainting = PreferPainting ? crop : (paths.Count == 0 && crop);
+            if (usePainting)
+            {
+                images.Add(CropForSpec(spec));
+                log?.Invoke("参考：直接从原画裁剪（" + spec.sceneId + "）");
+                return images;
+            }
             foreach (var p in paths) images.Add(File.ReadAllBytes(p));
             if (images.Count > 0)
             {
-                log?.Invoke($"使用设定图 {images.Count} 张: {string.Join(", ", paths.Select(Path.GetFileName))}");
+                log?.Invoke($"参考：设定图 {images.Count} 张: {string.Join(", ", paths.Select(Path.GetFileName))}");
                 return images;
             }
-            if (spec.crop.width <= 0f || spec.crop.height <= 0f)
-                throw new Exception($"没有设定图也没有裁剪框。请把正面图放到 {RefsFolder}/{spec.id}_front.png");
-            images.Add(CropForSpec(spec));
-            log?.Invoke("没有设定图，改用原画裁剪");
-            return images;
+            throw new Exception($"没有设定图也没有裁剪框。请把正面图放到 {RefsFolder}/{spec.id}_front.png，或在 ReferenceSceneLibrary 里给它一个 crop 框");
         }
 
         /// <summary>按规格裁剪参考图，四周留白并补成正方形，返回 PNG 字节；同时写一份到 Crops 目录方便检查。</summary>
@@ -175,8 +199,9 @@ namespace VN.EditorTools.AI3D
                 job.taskId = await provider.CreateTask(images, job.spec, job.Log);
 
                 job.stage = "生成模型";
-                var model = await WaitFor(job, provider.Poll, job.taskId, 0, 60, 40);
-                if (string.IsNullOrEmpty(model.fbxUrl) && string.IsNullOrEmpty(model.glbUrl)) throw new Exception("服务没有返回模型地址: " + model.raw);
+                int timeout = provider is HunyuanLocalProvider ? 25 : 40;
+                var model = await WaitFor(job, provider.Poll, job.taskId, 0, 60, timeout);
+                if (!model.HasModel) throw new Exception("服务没有返回模型地址: " + model.raw);
 
                 ProviderTaskResult final = model;
                 bool animated = false;
@@ -210,9 +235,19 @@ namespace VN.EditorTools.AI3D
                 job.stage = "下载模型";
                 string rawDir = Path.Combine(RawFolder, job.spec.id).Replace('\\', '/');
                 Directory.CreateDirectory(rawDir);
-                string modelUrl = !string.IsNullOrEmpty(final.fbxUrl) ? final.fbxUrl : final.glbUrl;
-                byte[] modelBytes = await HttpProviderBase.Download(modelUrl);
-                string modelPath = SaveModel(rawDir, job.spec.id, modelUrl, modelBytes, job.Log);
+                string modelPath;
+                if (final.glbBytes != null)
+                {
+                    modelPath = Path.Combine(rawDir, job.spec.id + ".glb").Replace('\\', '/');
+                    File.WriteAllBytes(modelPath, final.glbBytes);
+                    job.Log($"模型已保存 {modelPath} ({final.glbBytes.Length / 1024} KB)");
+                }
+                else
+                {
+                    string modelUrl = !string.IsNullOrEmpty(final.fbxUrl) ? final.fbxUrl : final.glbUrl;
+                    byte[] modelBytes = await HttpProviderBase.Download(modelUrl);
+                    modelPath = SaveModel(rawDir, job.spec.id, modelUrl, modelBytes, job.Log);
+                }
                 string texPath = null;
                 if (!string.IsNullOrEmpty(model.baseColorUrl))
                 {
@@ -224,9 +259,29 @@ namespace VN.EditorTools.AI3D
                     }
                     catch (Exception e) { job.Log("贴图下载失败（将使用 FBX 内嵌贴图）: " + e.Message); }
                 }
-                if (job.spec.isCharacter && !string.IsNullOrEmpty(model.fbxUrl) && final != model)
+                if (final != model && (!string.IsNullOrEmpty(model.glbUrl) || model.glbBytes != null))
                 {
-                    // 顺带保留未绑骨的原始模型，方便手工检查
+                    // 绑骨 / 动画走的是 FBX；基础色从未绑骨的 GLB 里取出来，顺便留一份静态模型
+                    try
+                    {
+                        byte[] staticGlb = model.glbBytes ?? await HttpProviderBase.Download(model.glbUrl);
+                        File.WriteAllBytes(Path.Combine(rawDir, job.spec.id + "_static.glb"), staticGlb);
+                        if (texPath == null)
+                        {
+                            var parsed = MiniGlb.LoadModel(staticGlb, job.spec.id + "_static");
+                            var m0 = parsed.materials.Count > 0 ? parsed.materials[0] : null;
+                            if (m0 != null && m0.baseColor != null)
+                            {
+                                texPath = Path.Combine(rawDir, job.spec.id + "_basecolor" + (IsJpeg(m0.baseColor) ? ".jpg" : ".png")).Replace('\\', '/');
+                                File.WriteAllBytes(texPath, m0.baseColor);
+                            }
+                            Object.DestroyImmediate(parsed.mesh);
+                        }
+                    }
+                    catch (Exception e) { job.Log("静态 GLB 处理失败（将使用 FBX 内嵌贴图）: " + e.Message); }
+                }
+                else if (final != model && !string.IsNullOrEmpty(model.fbxUrl))
+                {
                     try { File.WriteAllBytes(Path.Combine(rawDir, job.spec.id + "_static.fbx"), await HttpProviderBase.Download(model.fbxUrl)); }
                     catch { /* 可选 */ }
                 }
@@ -311,6 +366,52 @@ namespace VN.EditorTools.AI3D
 
         public static string ImportAndBuildPrefab(ReferencePropSpec spec, string modelPath, string texPath, Action<string> log, bool animated = false)
         {
+            bool isGlb = Path.GetExtension(modelPath).ToLowerInvariant() == ".glb";
+            if (isGlb)
+            {
+                // GLB：自己解析成 Mesh 资产 + 贴图文件，不依赖 Unity 的模型导入器
+                var glb = MiniGlb.LoadModel(File.ReadAllBytes(modelPath), spec.id);
+                Directory.CreateDirectory(MeshFolder);
+                string meshPath = MeshFolder + "/" + spec.id + ".asset";
+                var existing = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+                if (existing != null) { existing.Clear(); EditorUtility.CopySerialized(glb.mesh, existing); Object.DestroyImmediate(glb.mesh); glb.mesh = existing; }
+                else AssetDatabase.CreateAsset(glb.mesh, meshPath);
+                string dir = Path.GetDirectoryName(modelPath)?.Replace('\\', '/') ?? RawFolder;
+                string normalPath = null;
+                for (int i = 0; i < glb.materials.Count; i++)
+                {
+                    var m = glb.materials[i];
+                    if (texPath == null && m.baseColor != null)
+                    {
+                        texPath = dir + "/" + spec.id + "_basecolor" + (IsJpeg(m.baseColor) ? ".jpg" : ".png");
+                        File.WriteAllBytes(texPath, m.baseColor);
+                    }
+                    if (normalPath == null && m.normal != null)
+                    {
+                        normalPath = dir + "/" + spec.id + "_normal" + (IsJpeg(m.normal) ? ".jpg" : ".png");
+                        File.WriteAllBytes(normalPath, m.normal);
+                    }
+                }
+                AssetDatabase.SaveAssets();
+                if (!string.IsNullOrEmpty(texPath)) AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceUpdate);
+                if (!string.IsNullOrEmpty(normalPath))
+                {
+                    AssetDatabase.ImportAsset(normalPath, ImportAssetOptions.ForceUpdate);
+                    if (AssetImporter.GetAtPath(normalPath) is TextureImporter ni)
+                    {
+                        ni.textureType = TextureImporterType.NormalMap;
+                        ni.maxTextureSize = 4096;
+                        ni.SaveAndReimport();
+                    }
+                }
+                log?.Invoke($"GLB 解析完成：{glb.mesh.vertexCount} 顶点 / {glb.mesh.triangles.Length / 3} 三角形 / {glb.materials.Count} 材质" + (normalPath != null ? "（含法线贴图）" : ""));
+                var glbGo = new GameObject(spec.id + "_mesh");
+                glbGo.AddComponent<MeshFilter>().sharedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+                var mr = glbGo.AddComponent<MeshRenderer>();
+                mr.sharedMaterials = new Material[glb.materials.Count];
+                return BuildPrefabFromInstance(spec, glbGo, texPath, normalPath, log, false, modelPath);
+            }
+
             AssetDatabase.ImportAsset(modelPath, ImportAssetOptions.ForceUpdate);
             if (!string.IsNullOrEmpty(texPath)) AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceUpdate);
 
@@ -348,16 +449,18 @@ namespace VN.EditorTools.AI3D
             }
 
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
-            if (model == null)
-            {
-                if (Path.GetExtension(modelPath).ToLowerInvariant() == ".glb")
-                    throw new Exception("Unity 内置导入器不支持 GLB。请在 Meshy 中改用 FBX，或安装 glTFast 后重试。");
-                throw new Exception("模型导入失败: " + modelPath);
-            }
+            if (model == null) throw new Exception("模型导入失败: " + modelPath);
 
-            // 实例化并规范尺寸：高度 = targetHeight，原点放到脚底中心
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(model);
             PrefabUtility.UnpackPrefabInstance(instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+            return BuildPrefabFromInstance(spec, instance, texPath, null, log, wantsAnimation, modelPath);
+        }
+
+        private static bool IsJpeg(byte[] bytes) => bytes != null && bytes.Length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+
+        /// <summary>规范尺寸（高度 = targetHeight，原点在脚底中心）、统一材质、碰撞体与标记，保存成 prefab。</summary>
+        private static string BuildPrefabFromInstance(ReferencePropSpec spec, GameObject instance, string texPath, string normalPath, Action<string> log, bool wantsAnimation, string modelPath)
+        {
             var root = new GameObject(spec.id);
             instance.transform.SetParent(root.transform, false);
             instance.transform.localPosition = Vector3.zero;
@@ -375,12 +478,15 @@ namespace VN.EditorTools.AI3D
             // 统一用绘本铅笔材质 + AI 贴图
             Texture2D tex = string.IsNullOrEmpty(texPath) ? null : AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
             if (tex == null) tex = FindEmbeddedTexture(modelPath);
+            Texture2D normalTex = string.IsNullOrEmpty(normalPath) ? null : AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath);
             var shader = Shader.Find("Xiaoman/Fairytale Pencil") ?? Shader.Find("Standard");
             var mat = new Material(shader) { name = spec.id + "_Pencil", color = Color.white };
             if (tex != null) mat.mainTexture = tex;
+            if (normalTex != null && mat.HasProperty("_BumpMap")) { mat.SetTexture("_BumpMap", normalTex); mat.EnableKeyword("_NORMALMAP"); }
             if (mat.HasProperty("_Roughness")) mat.SetFloat("_Roughness", 0.8f);
-            if (mat.HasProperty("_HatchStrength")) mat.SetFloat("_HatchStrength", spec.isCharacter ? 0.03f : 0.06f);
+            if (mat.HasProperty("_HatchStrength")) mat.SetFloat("_HatchStrength", spec.isCharacter ? 0.02f : 0.04f);
             if (mat.HasProperty("_RimColor")) mat.SetColor("_RimColor", FairytaleArt.Ink);
+            if (tex == null) log?.Invoke("注意：没有找到基础色贴图，模型将显示为白模");
             Directory.CreateDirectory(PrefabFolder);
             string matPath = PrefabFolder + "/" + spec.id + "_Pencil.mat";
             AssetDatabase.CreateAsset(mat, matPath);

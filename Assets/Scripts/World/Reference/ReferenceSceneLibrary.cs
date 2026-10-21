@@ -26,9 +26,9 @@ namespace VN.World
             this.crop = crop; this.targetHeight = targetHeight; aiCandidate = ai;
         }
 
-        public static ReferencePropSpec Character(string id, string sceneId, string displayName, string prompt, float height, params int[] actions)
+        public static ReferencePropSpec Character(string id, string sceneId, string displayName, string prompt, Rect crop, float height, params int[] actions)
         {
-            return new ReferencePropSpec(id, sceneId, displayName, prompt, Rect.zero, height, true)
+            return new ReferencePropSpec(id, sceneId, displayName, prompt, crop, height, true)
             {
                 isCharacter = true,
                 animationActionIds = actions != null && actions.Length > 0 ? actions : new[] { 0 },
@@ -140,12 +140,13 @@ namespace VN.World
                 new ReferencePropSpec("yellow_door", "orange", "黄色木门", "A bright yellow wooden door in a plain concrete frame." + style, new Rect(0.25f, 0.36f, 0.11f, 0.28f), 2.3f),
                 new ReferencePropSpec("red_crate", "orange", "红色小箱", "A small red plastic crate." + style, new Rect(0.17f, 0.58f, 0.07f, 0.09f), 0.36f),
                 // 人物：用 Assets/Art/AI3D/Refs/<id>_front/back 的正反面设定图多视角重建，A-pose → 自动绑骨 → 预设动画
-                ReferencePropSpec.Character("suit_man", "greenhouse", "白西装男子", "A young man in a cream linen suit with short dark brown hair and brown leather shoes, soft anime style, clean fabric." + charStyle, 1.8f, 56),
-                ReferencePropSpec.Character("piano_girl", "greenhouse", "弹琴的少女", "A girl with long light brown wavy hair in a long cream white dress with a sash, soft anime style." + charStyle, 1.6f, 32),
-                ReferencePropSpec.Character("hooded_figure", "seaside", "连帽衫的人", "A person in a grey hooded jacket with the hood up, dark green long skirt, brown shoulder bag, dark boots, soft anime style." + charStyle, 1.8f, 0),
-                ReferencePropSpec.Character("rabbit_girl", "seaside", "兔耳少女", "A girl with long pale blonde hair and tall white rabbit ears, grey-blue jacket, dark green pleated skirt, yellow tights, green sneakers, soft anime style." + charStyle, 1.7f, 11),
-                ReferencePropSpec.Character("street_girl", "street", "推车的少女", "A cheerful schoolgirl with long brown hair, white sailor blouse with navy collar, navy pleated skirt, white socks, brown loafers, soft anime style." + charStyle, 1.7f, 12),
-                ReferencePropSpec.Character("courtyard_girl", "orange", "院子里的少女", "A young woman with auburn hair in a low bun, white long-sleeve blouse, long deep teal-blue skirt, dark flat shoes, soft anime style." + charStyle, 1.7f, 56),
+                // 人物的 crop 直接框在原画上（默认「原画裁剪」模式用它；「设定图」模式用 Refs 里的正反面图）
+                ReferencePropSpec.Character("suit_man", "greenhouse", "白西装男子", "A young man in a cream linen suit with short dark brown hair and brown leather shoes, soft anime style, clean fabric." + charStyle, new Rect(0.20f, 0.24f, 0.23f, 0.59f), 1.8f, 56),
+                ReferencePropSpec.Character("piano_girl", "greenhouse", "弹琴的少女", "A girl with long light brown wavy hair in a long cream white dress with a sash, soft anime style." + charStyle, new Rect(0.51f, 0.39f, 0.26f, 0.37f), 1.6f, 32),
+                ReferencePropSpec.Character("hooded_figure", "seaside", "连帽衫的人", "A person in a grey hooded jacket with the hood up, dark green long skirt, brown shoulder bag, dark boots, soft anime style." + charStyle, new Rect(0.39f, 0.65f, 0.12f, 0.26f), 1.8f, 0),
+                ReferencePropSpec.Character("rabbit_girl", "seaside", "兔耳少女", "A girl with long pale blonde hair and tall white rabbit ears, grey-blue jacket, dark green pleated skirt, yellow tights, green sneakers, soft anime style." + charStyle, new Rect(0.52f, 0.65f, 0.12f, 0.26f), 1.7f, 11),
+                ReferencePropSpec.Character("street_girl", "street", "推车的少女", "A cheerful schoolgirl with long brown hair, white sailor blouse with navy collar, navy pleated skirt, white socks, brown loafers, soft anime style." + charStyle, new Rect(0.26f, 0.51f, 0.10f, 0.24f), 1.7f, 12),
+                ReferencePropSpec.Character("courtyard_girl", "orange", "院子里的少女", "A young woman with auburn hair in a low bun, white long-sleeve blouse, long deep teal-blue skirt, dark flat shoes, soft anime style." + charStyle, new Rect(0.33f, 0.46f, 0.09f, 0.48f), 1.7f, 56),
                 // 仅程序化（树木 / 建筑 / 海鸥等大体量或大量重复的元素交给手绘低模或 Marble 环境）
                 new ReferencePropSpec("seagull", "seaside", "海鸥", "", Rect.zero, 0.3f, false),
                 new ReferencePropSpec("grass_tuft", "seaside", "草丛", "", Rect.zero, 0.6f, false),

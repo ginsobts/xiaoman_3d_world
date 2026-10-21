@@ -38,6 +38,7 @@ namespace VN.World
             }
             _zones.Clear();
             _zones.AddRange(FindObjectsOfType<LightingZone>());
+            RenderQuality.Apply(_camera, _sun);
             Apply(Current);
         }
 

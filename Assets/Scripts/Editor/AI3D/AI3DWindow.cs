@@ -16,7 +16,11 @@ namespace VN.EditorTools.AI3D
     /// </summary>
     public class AI3DWindow : EditorWindow
     {
-        private const string ProviderPref = "Xiaoman.AI3D.Provider";
+        private const string ProviderPref = "Xiaoman.AI3D.Provider2";   // 0 本地 Hunyuan3D, 1 Tripo, 2 Meshy
+        private const int ProviderHunyuan = 0, ProviderTripo = 1, ProviderMeshy = 2;
+        private string _hunyuanUrl = HunyuanLocalProvider.DefaultUrl;
+        private bool? _hunyuanOnline;
+        private double _hunyuanCheckedAt;
         private const string ConcurrencyPref = "Xiaoman.AI3D.Concurrency";
         private const string TabPref = "Xiaoman.AI3D.Tab";
 
@@ -76,7 +80,8 @@ namespace VN.EditorTools.AI3D
         private void OnEnable()
         {
             _tab = EditorPrefs.GetInt(TabPref, 0);
-            _providerIndex = EditorPrefs.GetInt(ProviderPref, 0);
+            _providerIndex = Mathf.Clamp(EditorPrefs.GetInt(ProviderPref, ProviderHunyuan), 0, 2);
+            _hunyuanUrl = HunyuanLocalProvider.BaseUrl;
             _meshyKey = EditorPrefs.GetString(MeshyProvider.Pref, "");
             _tripoKey = EditorPrefs.GetString(TripoProvider.Pref, "");
             _marbleKey = EditorPrefs.GetString(MarbleProvider.Pref, "");
@@ -94,15 +99,34 @@ namespace VN.EditorTools.AI3D
 
         private IImageTo3DProvider MakeProvider()
         {
-            return _providerIndex == 1 ? (IImageTo3DProvider)new TripoProvider(_tripoKey) : new MeshyProvider(_meshyKey);
+            switch (_providerIndex)
+            {
+                case ProviderTripo: return new TripoProvider(_tripoKey);
+                case ProviderMeshy: return new MeshyProvider(_meshyKey);
+                default: return new HunyuanLocalProvider(_hunyuanUrl);
+            }
         }
 
-        private string CurrentKey => _providerIndex == 1 ? _tripoKey : _meshyKey;
+        /// <summary>当前服务商是否可用：本地服务看在线状态，云服务看 Key。</summary>
+        private bool ProviderReady => _providerIndex == ProviderHunyuan ? _hunyuanOnline == true
+            : !string.IsNullOrEmpty(_providerIndex == ProviderTripo ? _tripoKey : _meshyKey);
+
+        private void RefreshHunyuanStatus(bool force = false)
+        {
+            if (!force && EditorApplication.timeSinceStartup - _hunyuanCheckedAt < 5.0) return;
+            _hunyuanCheckedAt = EditorApplication.timeSinceStartup;
+            string url = _hunyuanUrl;
+            HunyuanLocalProvider.IsOnline(url).ContinueWith(t =>
+            {
+                _hunyuanOnline = t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && t.Result;
+                EditorApplication.delayCall += Repaint;
+            });
+        }
 
         private void OnGUI()
         {
             EditorGUILayout.Space(6);
-            int newTab = GUILayout.Toolbar(_tab, new[] { "道具与人物（Meshy）", "环境（World Labs Marble）" }, GUILayout.Height(26));
+            int newTab = GUILayout.Toolbar(_tab, new[] { "道具与人物（图生 3D）", "环境（World Labs Marble）" }, GUILayout.Height(26));
             if (newTab != _tab) { _tab = newTab; EditorPrefs.SetInt(TabPref, _tab); }
             EditorGUILayout.Space(6);
             if (_tab == 0) DrawPropsTab(); else DrawMarbleTab();
@@ -113,29 +137,55 @@ namespace VN.EditorTools.AI3D
         private void DrawPropsTab()
         {
             EditorGUILayout.LabelField("图生 3D 服务商", EditorStyles.boldLabel);
-            int newProvider = GUILayout.Toolbar(_providerIndex, new[] { "Meshy 7.1（推荐，含绑骨动画）", "Tripo v3.1（备用，仅道具）" });
+            int newProvider = GUILayout.Toolbar(_providerIndex, new[] { "本地 Hunyuan3D（免费，不用账号）", "Tripo v3.1（免费 2000 点，含绑骨）", "Meshy 7.1（付费）" });
             if (newProvider != _providerIndex) { _providerIndex = newProvider; EditorPrefs.SetInt(ProviderPref, _providerIndex); }
 
             EditorGUI.BeginChangeCheck();
-            if (_providerIndex == 0)
+            if (_providerIndex == ProviderHunyuan)
+            {
+                RefreshHunyuanStatus();
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    _hunyuanUrl = EditorGUILayout.TextField("本地服务地址", _hunyuanUrl);
+                    string state = _hunyuanOnline == null ? "检测中…" : _hunyuanOnline == true ? "在线" : "离线";
+                    var st = new GUIStyle(EditorStyles.miniBoldLabel);
+                    st.normal.textColor = _hunyuanOnline == true ? new Color(0.3f, 0.7f, 0.35f) : new Color(0.9f, 0.5f, 0.2f);
+                    EditorGUILayout.LabelField(state, st, GUILayout.Width(48));
+                    if (GUILayout.Button("重测", GUILayout.Width(40))) RefreshHunyuanStatus(true);
+                }
+                var tier = (HunyuanLocalProvider.QualityTier)EditorGUILayout.Popup("精度档位", (int)HunyuanLocalProvider.Tier,
+                    new[] { "标准（octree 128，5 万面，最快）", "高（octree 256，12 万面）", "极致（octree 384，20 万面，最慢）" });
+                if (tier != HunyuanLocalProvider.Tier) HunyuanLocalProvider.Tier = tier;
+                EditorGUILayout.HelpBox("腾讯 Hunyuan3D-2 跑在你自己的显卡上，完全免费、不限次数。先双击 tools/Hunyuan3D/start_hunyuan_api.bat 启动服务（首次会下载模型，几 GB），状态变成「在线」后就能生成。RTX 3060 大约 1–3 分钟/个。不做绑骨：人物会以静态模型导入，想要会动的人物请切到 Tripo。", MessageType.Info);
+            }
+            else if (_providerIndex == ProviderTripo)
+            {
+                _tripoKey = EditorGUILayout.PasswordField("Tripo API Key", _tripoKey);
+                var tier = (TripoProvider.QualityTier)EditorGUILayout.Popup("精度档位", (int)TripoProvider.Tier,
+                    new[] { "标准（30 点：6 万面 + 标准贴图）", "高（40 点：15 万面 + 精细贴图）", "极致（60 点：自适应面数 + 精细几何）" });
+                if (tier != TripoProvider.Tier) TripoProvider.Tier = tier;
+                int total = ReferenceSceneLibrary.Props.Where(p => p.aiCandidate && _selected.TryGetValue(p.id, out var s) && s).Sum(TripoProvider.EstimateCredits);
+                EditorGUILayout.HelpBox($"在 https://platform.tripo3d.ai 免费注册 → API Keys → Generate，第一次创建 Key 自动送 2000 Credits（不用绑卡）。当前选中的清单预计消耗 {total} Credits。人物 = 生成 + 绑骨 25 + 动画 10。", MessageType.Info);
+            }
+            else
             {
                 _meshyKey = EditorGUILayout.PasswordField("Meshy API Key", _meshyKey);
                 var tier = (MeshyProvider.QualityTier)EditorGUILayout.Popup("精度档位", (int)MeshyProvider.Tier,
                     new[] { "标准（5 万面）", "高（15 万面，4K 几何 + 4K 贴图）", "极致（不减面，文件最大）" });
                 if (tier != MeshyProvider.Tier) MeshyProvider.Tier = tier;
-                EditorGUILayout.HelpBox("Key 在 https://www.meshy.ai/settings/api 创建，只保存在本机。高精度单图约 20–60 Credits/个，人物另加绑骨 5 + 动画 3/段。设定图放在 Assets/Art/AI3D/Refs/<id>.png 或 <id>_front/_back.png，自动多视角重建。", MessageType.Info);
+                EditorGUILayout.HelpBox("Key 在 https://www.meshy.ai/settings/api 创建（需要付费套餐）。高精度单图约 20–60 Credits/个，人物另加绑骨 5 + 动画 3/段。", MessageType.Info);
             }
-            else
-            {
-                _tripoKey = EditorGUILayout.PasswordField("Tripo API Key", _tripoKey);
-                EditorGUILayout.HelpBox("在 https://platform.tripo3d.ai 创建 Key。Tripo 先生成 GLB 再自动转换为 FBX；不做绑骨。", MessageType.Info);
-            }
+
+            bool painting = AI3DImporter.PreferPainting;
+            int src = GUILayout.Toolbar(painting ? 0 : 1, new[] { "参考来源：直接裁剪原画（贴图最像画）", "参考来源：干净设定图（正反两面，几何更稳）" });
+            if ((src == 0) != painting) AI3DImporter.PreferPainting = src == 0;
             _concurrency = EditorGUILayout.IntSlider("并发任务数", _concurrency, 1, 6);
             _modelYaw = EditorGUILayout.Slider(new GUIContent("模型朝向补正(°)", "导入后发现人物/道具背对玩家时改成 180 再重新导入"), _modelYaw, -180f, 180f);
             if (EditorGUI.EndChangeCheck())
             {
                 EditorPrefs.SetString(MeshyProvider.Pref, _meshyKey);
                 EditorPrefs.SetString(TripoProvider.Pref, _tripoKey);
+                HunyuanLocalProvider.BaseUrl = _hunyuanUrl;
                 EditorPrefs.SetInt(ConcurrencyPref, _concurrency);
                 EditorPrefs.SetFloat(AI3DImporter.YawPref, _modelYaw);
             }
@@ -175,7 +225,7 @@ namespace VN.EditorTools.AI3D
             int running = _jobs.Values.Count(j => j.running);
             using (new EditorGUILayout.HorizontalScope())
             {
-                using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(CurrentKey) || selectedCount == 0))
+                using (new EditorGUI.DisabledScope(!ProviderReady || selectedCount == 0))
                 {
                     if (GUILayout.Button($"生成选中的 {selectedCount} 个", GUILayout.Height(30)))
                         Enqueue(ReferenceSceneLibrary.Props.Where(p => p.aiCandidate && _selected.TryGetValue(p.id, out var s) && s));
@@ -183,9 +233,9 @@ namespace VN.EditorTools.AI3D
                 if (GUILayout.Button("用 AI 模型替换场景占位", GUILayout.Height(30), GUILayout.Width(170))) ReplacePlaceholders();
             }
             if (running > 0 || _queue.Count > 0)
-                EditorGUILayout.HelpBox($"进行中 {running} 个，排队 {_queue.Count} 个。高精度生成约 5–10 分钟/个，人物再加 2–4 分钟。窗口可以最小化但不要关闭 Unity。", MessageType.None);
-            if (string.IsNullOrEmpty(CurrentKey))
-                EditorGUILayout.HelpBox("请先填写 API Key。", MessageType.Warning);
+                EditorGUILayout.HelpBox($"进行中 {running} 个，排队 {_queue.Count} 个。本地约 1–3 分钟/个，云端 5–10 分钟/个，人物再加 2–4 分钟。窗口可以最小化但不要关闭 Unity。", MessageType.None);
+            if (!ProviderReady)
+                EditorGUILayout.HelpBox(_providerIndex == ProviderHunyuan ? "本地服务离线：请先运行 tools/Hunyuan3D/start_hunyuan_api.bat，等命令行出现 Uvicorn running 后点「重测」。" : "请先填写 API Key。", MessageType.Warning);
             EditorGUILayout.Space(4);
         }
 
@@ -202,8 +252,7 @@ namespace VN.EditorTools.AI3D
 
                 string label = (spec.isCharacter ? "[人物] " : "") + spec.displayName + "  (" + spec.id + ")";
                 EditorGUILayout.LabelField(label, GUILayout.Width(210));
-                string srcInfo = refs.Count > 0 ? $"设定图×{refs.Count}" : "原画裁剪";
-                EditorGUILayout.LabelField(srcInfo, EditorStyles.miniLabel, GUILayout.Width(64));
+                EditorGUILayout.LabelField(AI3DImporter.DescribeSource(spec), EditorStyles.miniLabel, GUILayout.Width(110));
                 string status = job != null ? job.stage + (job.running ? $" {job.progress}%" : "") : (generated ? "已生成" : "占位模型");
                 var style = new GUIStyle(EditorStyles.label);
                 if (job != null && job.error != null) style.normal.textColor = new Color(0.9f, 0.3f, 0.3f);
@@ -216,15 +265,16 @@ namespace VN.EditorTools.AI3D
                     EditorGUIUtility.PingObject(Resources.Load<GameObject>(AIAssetLibrary.ResourcesFolder + "/" + spec.id));
                 if (GUILayout.Button("参考图", GUILayout.Width(52)))
                 {
-                    if (refs.Count > 0) EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Texture2D>(refs[0]));
-                    else
+                    bool usePainting = AI3DImporter.PreferPainting ? AI3DImporter.HasCrop(spec) : refs.Count == 0;
+                    if (!usePainting && refs.Count > 0) EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Texture2D>(refs[0]));
+                    else if (AI3DImporter.HasCrop(spec))
                     {
                         AI3DImporter.CropForSpec(spec);
                         AssetDatabase.Refresh();
                         EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Texture2D>(AI3DImporter.CropFolder + "/" + spec.id + ".png"));
                     }
                 }
-                using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(CurrentKey) || (job != null && job.running)))
+                using (new EditorGUI.DisabledScope(!ProviderReady || (job != null && job.running)))
                 {
                     if (GUILayout.Button(generated ? "重新生成" : "生成", GUILayout.Width(64))) Enqueue(new[] { spec });
                 }

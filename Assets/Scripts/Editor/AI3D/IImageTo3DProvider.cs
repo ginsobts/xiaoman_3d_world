@@ -24,6 +24,10 @@ namespace VN.EditorTools.AI3D
         public string nextTaskId;
         /// <summary>绑骨阶段附带的基础行走动画（FBX，含蒙皮）。</summary>
         public string walkingFbxUrl;
+        /// <summary>本地服务直接返回的 GLB 字节（没有可下载的 URL 时使用）。</summary>
+        public byte[] glbBytes;
+
+        public bool HasModel => !string.IsNullOrEmpty(fbxUrl) || !string.IsNullOrEmpty(glbUrl) || glbBytes != null;
     }
 
     /// <summary>

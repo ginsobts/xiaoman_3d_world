@@ -2,77 +2,118 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
+using UnityEditor;
 using VN.World;
 
 namespace VN.EditorTools.AI3D
 {
     /// <summary>
-    /// Tripo v3 图生 3D（备用服务商）。生成 GLB 后再调用 convert 转 FBX。
-    /// 文档：https://platform.tripo3d.ai/docs
+    /// Tripo v3 OpenAPI（H3.1）。第一次创建 API Key 送 2000 Credits，足够把全部道具 + 人物各做一遍。
+    /// 道具：image-to-model → PBR GLB（直接用 MiniGlb 导入，不花转换费）。
+    /// 人物：image-to-model → animations/rig（v1.0 biped，支持坐 / 抱臂等 90+ 预设）→ animations/retarget（FBX）。
+    /// 文档：https://developers.tripo3d.ai/en/docs
     /// </summary>
     public class TripoProvider : HttpProviderBase, IImageTo3DProvider
     {
         public const string Pref = "Xiaoman.AI3D.TripoKey";
+        public const string TierPref = "Xiaoman.AI3D.TripoTier";
         private const string Base = "https://openapi.tripo3d.ai/v3";
         private const string Model = "v3.1-20260211";
+        private const string RigModel = "v1.0-20240301";   // 预设动作最全（sit / fold_arms / look_around …）
+
+        public enum QualityTier { Standard, High, Ultra }
+
+        public static QualityTier Tier
+        {
+            get => (QualityTier)EditorPrefs.GetInt(TierPref, (int)QualityTier.High);
+            set => EditorPrefs.SetInt(TierPref, (int)value);
+        }
+
+        /// <summary>估算一次生成的 Credits（道具 / 人物）。</summary>
+        public static int EstimateCredits(ReferencePropSpec spec)
+        {
+            var t = Tier;
+            int gen = t == QualityTier.Standard ? 30 : t == QualityTier.High ? 40 : 60;
+            return spec.isCharacter ? gen + 25 + 10 : gen;
+        }
 
         public string Name => "Tripo v3.1";
         public string KeyPrefName => Pref;
-        public bool SupportsRigging => false;
-
-        // 任务 id 格式："gen:<id>" 表示生成阶段，"conv:<id>" 表示 FBX 转换阶段
-        private readonly Dictionary<string, string> _baseColorByTask = new Dictionary<string, string>();
+        public bool SupportsRigging => true;
 
         public TripoProvider(string apiKey) : base(apiKey) { }
 
-        public Task<string> CreateRigTask(string modelTaskId, ReferencePropSpec spec, Action<string> log) => throw new NotSupportedException("Tripo 备用通道不做自动绑骨，请用 Meshy 生成人物。");
-        public Task<ProviderTaskResult> PollRig(string rigTaskId, Action<string> log) => throw new NotSupportedException();
-        public Task<string> CreateAnimationTask(string rigTaskId, int[] actionIds, Action<string> log) => throw new NotSupportedException();
-        public Task<ProviderTaskResult> PollAnimation(string animTaskId, Action<string> log) => throw new NotSupportedException();
+        // ---------- 生成 ----------
 
         public async Task<string> CreateTask(IList<byte[]> images, ReferencePropSpec spec, Action<string> log)
         {
             if (images == null || images.Count == 0) throw new Exception("没有可用的参考图");
-            byte[] png = images[0];
-            bool isJpeg = png.Length > 3 && png[0] == 0xFF && png[1] == 0xD8;
-            // 1. 上传图片（Tripo 只取正面主视图）
+            if (string.IsNullOrEmpty(ApiKey)) throw new Exception("还没有填写 Tripo API Key。到 https://platform.tripo3d.ai 免费注册并创建 Key（首次送 2000 Credits）。");
+            string token = await Upload(images[0], spec.id);
+            var tier = Tier;
+
+            var body = new Dictionary<string, object>
+            {
+                { "input", token },
+                { "model", Model },
+                { "texture", true },
+                { "pbr", true },
+                { "texture_quality", tier == QualityTier.Standard ? "standard" : "detailed" },
+                { "texture_alignment", "original_image" },
+                { "orientation", "align_image" },
+                { "enable_image_autofix", true },   // 原画裁剪分辨率低，让服务端先补全增强
+                { "auto_size", false },
+            };
+            if (tier == QualityTier.Ultra) body["geometry_quality"] = "detailed";
+            else body["face_limit"] = tier == QualityTier.High ? 150000 : 60000;
+
+            // 多视角：有背面图时走 multiview-to-model（view-key 格式）
+            string endpoint = "/generation/image-to-model";
+            if (images.Count >= 2)
+            {
+                string backToken = await Upload(images[1], spec.id + "_back");
+                body.Remove("input");
+                body.Remove("enable_image_autofix");
+                body["inputs"] = new List<object>
+                {
+                    new Dictionary<string, object> { { "front", token } },
+                    new Dictionary<string, object> { { "back", backToken } },
+                };
+                endpoint = "/generation/multiview-to-model";
+            }
+
+            var (ok, code, resp) = await Send(Request(HttpMethod.Post, Base + endpoint, body));
+            if (!ok) throw new Exception($"Tripo 创建任务失败 HTTP {code}: {resp}");
+            var json = MiniJson.Parse(resp);
+            string id = MiniJson.GetString(json, "data.task_id");
+            if (string.IsNullOrEmpty(id)) throw new Exception("Tripo 返回里没有 task_id: " + resp);
+            log?.Invoke($"[Tripo] 任务已创建 {id}（{tier}）");
+            return id;
+        }
+
+        private async Task<string> Upload(byte[] image, string name)
+        {
+            bool isJpeg = image.Length > 3 && image[0] == 0xFF && image[1] == 0xD8;
             var upload = Request(HttpMethod.Post, Base + "/files");
             var form = new MultipartFormDataContent();
-            var file = new ByteArrayContent(png);
+            var file = new ByteArrayContent(image);
             file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(isJpeg ? "image/jpeg" : "image/png");
-            form.Add(file, "file", spec.id + (isJpeg ? ".jpg" : ".png"));
+            form.Add(file, "file", name + (isJpeg ? ".jpg" : ".png"));
             upload.Content = form;
             var (ok, code, resp) = await Send(upload);
             if (!ok) throw new Exception($"Tripo 上传失败 HTTP {code}: {resp}");
             var json = MiniJson.Parse(resp);
             string token = MiniJson.GetString(json, "data.file_token") ?? MiniJson.GetString(json, "data.image_token");
             if (string.IsNullOrEmpty(token)) throw new Exception("Tripo 上传返回里没有 file_token: " + resp);
-
-            // 2. 创建任务
-            var body = new Dictionary<string, object>
-            {
-                { "model", Model },
-                { "input", new Dictionary<string, object> { { "type", isJpeg ? "jpg" : "png" }, { "file_token", token } } },
-                { "texture", true },
-                { "pbr", true },
-                { "texture_quality", "detailed" },
-                { "face_limit", 150000 },
-            };
-            var (ok2, code2, resp2) = await Send(Request(HttpMethod.Post, Base + "/generation/image-to-model", body));
-            if (!ok2) throw new Exception($"Tripo 创建任务失败 HTTP {code2}: {resp2}");
-            var json2 = MiniJson.Parse(resp2);
-            string id = MiniJson.GetString(json2, "data.task_id") ?? MiniJson.GetString(json2, "data.id");
-            if (string.IsNullOrEmpty(id)) throw new Exception("Tripo 返回里没有 task_id: " + resp2);
-            log?.Invoke($"[Tripo] 任务已创建 {id}");
-            return "gen:" + id;
+            return token;
         }
 
-        public async Task<ProviderTaskResult> Poll(string taskId, Action<string> log)
+        public Task<ProviderTaskResult> Poll(string taskId, Action<string> log) => GetTask(taskId, false);
+
+        private async Task<ProviderTaskResult> GetTask(string taskId, bool wantFbx)
         {
             var result = new ProviderTaskResult();
-            bool converting = taskId.StartsWith("conv:");
-            string rawId = taskId.Substring(taskId.IndexOf(':') + 1);
-            var (ok, code, resp) = await Send(Request(HttpMethod.Get, Base + "/tasks/" + rawId));
+            var (ok, code, resp) = await Send(Request(HttpMethod.Get, Base + "/tasks/" + taskId));
             result.raw = resp;
             if (!ok)
             {
@@ -86,7 +127,7 @@ namespace VN.EditorTools.AI3D
             if (status == "failed" || status == "cancelled" || status == "banned" || status == "expired" || status == "unknown")
             {
                 result.status = ProviderTaskStatus.Failed;
-                result.error = MiniJson.GetString(json, "data.error") ?? MiniJson.GetString(json, "message") ?? status;
+                result.error = MiniJson.GetString(json, "data.error") ?? MiniJson.GetString(json, "data.message") ?? MiniJson.GetString(json, "message") ?? status;
                 return result;
             }
             if (status != "success")
@@ -94,36 +135,86 @@ namespace VN.EditorTools.AI3D
                 result.status = status == "running" ? ProviderTaskStatus.Running : ProviderTaskStatus.Pending;
                 return result;
             }
-
-            if (!converting)
-            {
-                // 生成完成：记录 GLB 与贴图，再发起 FBX 转换
-                string glb = MiniJson.GetString(json, "data.output.pbr_model") ?? MiniJson.GetString(json, "data.output.model");
-                string baseColor = MiniJson.GetString(json, "data.output.base_color") ?? MiniJson.GetString(json, "data.output.rendered_image");
-                var body = new Dictionary<string, object> { { "input", rawId }, { "format", "FBX" }, { "quad", false }, { "face_limit", 150000 } };
-                var (ok2, code2, resp2) = await Send(Request(HttpMethod.Post, Base + "/models/convert", body));
-                if (!ok2)
-                {
-                    // 转换不可用时直接交出 GLB，由导入器决定如何处理
-                    log?.Invoke($"[Tripo] FBX 转换失败 HTTP {code2}，改用 GLB: {resp2}");
-                    result.status = ProviderTaskStatus.Succeeded;
-                    result.glbUrl = glb;
-                    result.baseColorUrl = baseColor;
-                    return result;
-                }
-                string convId = MiniJson.GetString(MiniJson.Parse(resp2), "data.task_id");
-                _baseColorByTask["conv:" + convId] = baseColor;
-                log?.Invoke($"[Tripo] 生成完成，开始转换 FBX {convId}");
-                result.status = ProviderTaskStatus.Running;
-                result.nextTaskId = "conv:" + convId;
-                result.progress = 90;
-                return result;
-            }
-
             result.status = ProviderTaskStatus.Succeeded;
-            result.fbxUrl = MiniJson.GetString(json, "data.output.model_url") ?? MiniJson.GetString(json, "data.output.model");
-            _baseColorByTask.TryGetValue(taskId, out result.baseColorUrl);
+            string url = MiniJson.GetString(json, "data.output.model_url")
+                ?? MiniJson.GetString(json, "data.output.pbr_model")
+                ?? MiniJson.GetString(json, "data.output.model")
+                ?? MiniJson.GetString(json, "data.output.model_urls.0");
+            if (string.IsNullOrEmpty(url)) { result.status = ProviderTaskStatus.Failed; result.error = "任务成功但没有模型地址: " + resp; return result; }
+            if (wantFbx || url.ToLowerInvariant().Contains(".fbx")) result.fbxUrl = url; else result.glbUrl = url;
+            result.baseColorUrl = MiniJson.GetString(json, "data.output.base_color");
             return result;
         }
+
+        // ---------- 绑骨与动画 ----------
+
+        public async Task<string> CreateRigTask(string modelTaskId, ReferencePropSpec spec, Action<string> log)
+        {
+            // 可选的 rig-check 免费；失败也不阻塞
+            try
+            {
+                var (okc, _, respc) = await Send(Request(HttpMethod.Post, Base + "/animations/rig-check", new Dictionary<string, object> { { "input", modelTaskId } }));
+                if (okc)
+                {
+                    var jc = MiniJson.Parse(respc);
+                    var riggable = MiniJson.Get(jc, "data.riggable") ?? MiniJson.Get(jc, "data.output.riggable");
+                    if (riggable is bool b && !b) log?.Invoke("[Tripo] rig-check 认为该模型不适合绑骨，仍尝试绑骨");
+                }
+            }
+            catch { /* 可选 */ }
+
+            var body = new Dictionary<string, object>
+            {
+                { "input", modelTaskId },
+                { "model", RigModel },
+                { "rig_type", "biped" },
+                { "spec", "mixamo" },
+                { "out_format", "fbx" },
+            };
+            var (ok, code, resp) = await Send(Request(HttpMethod.Post, Base + "/animations/rig", body));
+            if (!ok) throw new Exception($"Tripo 绑骨失败 HTTP {code}: {resp}");
+            string id = MiniJson.GetString(MiniJson.Parse(resp), "data.task_id");
+            if (string.IsNullOrEmpty(id)) throw new Exception("Tripo 绑骨返回里没有 task_id: " + resp);
+            log?.Invoke($"[Tripo] 绑骨任务 {id}（25 Credits）");
+            return id;
+        }
+
+        public Task<ProviderTaskResult> PollRig(string rigTaskId, Action<string> log) => GetTask(rigTaskId, true);
+
+        /// <summary>Meshy 动作库编号 → Tripo v1.0 biped 预设。</summary>
+        public static string PresetFor(int meshyActionId)
+        {
+            switch (meshyActionId)
+            {
+                case 30: return "preset:biped:walk";
+                case 32:
+                case 33: return "preset:biped:sit";
+                case 56: return "preset:biped:fold_arms";
+                case 11: return "preset:biped:standing_relax";
+                case 12: return "preset:biped:look_around";
+                default: return "preset:biped:idle";
+            }
+        }
+
+        public async Task<string> CreateAnimationTask(string rigTaskId, int[] actionIds, Action<string> log)
+        {
+            string preset = PresetFor(actionIds != null && actionIds.Length > 0 ? actionIds[0] : 0);
+            var body = new Dictionary<string, object>
+            {
+                { "input", rigTaskId },
+                { "animation", preset },
+                { "out_format", "fbx" },
+                { "export_with_geometry", true },
+                { "animate_in_place", true },
+            };
+            var (ok, code, resp) = await Send(Request(HttpMethod.Post, Base + "/animations/retarget", body));
+            if (!ok) throw new Exception($"Tripo 动画失败 HTTP {code}: {resp}");
+            string id = MiniJson.GetString(MiniJson.Parse(resp), "data.task_id");
+            if (string.IsNullOrEmpty(id)) throw new Exception("Tripo 动画返回里没有 task_id: " + resp);
+            log?.Invoke($"[Tripo] 动画任务 {id}：{preset}（10 Credits）");
+            return id;
+        }
+
+        public Task<ProviderTaskResult> PollAnimation(string animTaskId, Action<string> log) => GetTask(animTaskId, true);
     }
 }
