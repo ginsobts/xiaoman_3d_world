@@ -119,7 +119,16 @@ namespace VN.EditorTools
         private static void CreateWorldSceneAsset()
         {
             Scene previous = SceneManager.GetActiveScene();
-            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Additive);
+            // Unity 不允许在“尚未保存的 Untitled 场景”旁边新建 Additive 场景。
+            // 批处理没有用户场景需要保护，直接用 Single；交互编辑器则等待用户先保存当前场景。
+            if (!Application.isBatchMode && string.IsNullOrEmpty(previous.path))
+            {
+                Debug.Log("[3D世界] 当前场景尚未保存；保存后可自动生成 World3D，或使用菜单手动创建。");
+                return;
+            }
+            bool additive = !Application.isBatchMode;
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects,
+                additive ? NewSceneMode.Additive : NewSceneMode.Single);
             SceneManager.SetActiveScene(scene);
             try
             {
@@ -145,8 +154,11 @@ namespace VN.EditorTools
             }
             finally
             {
-                if (previous.IsValid() && previous.isLoaded) SceneManager.SetActiveScene(previous);
-                EditorSceneManager.CloseScene(scene, true);
+                if (additive)
+                {
+                    if (previous.IsValid() && previous.isLoaded) SceneManager.SetActiveScene(previous);
+                    EditorSceneManager.CloseScene(scene, true);
+                }
             }
         }
 
