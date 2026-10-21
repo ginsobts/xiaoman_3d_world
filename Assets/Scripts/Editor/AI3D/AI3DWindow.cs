@@ -179,6 +179,8 @@ namespace VN.EditorTools.AI3D
             bool painting = AI3DImporter.PreferPainting;
             int src = GUILayout.Toolbar(painting ? 0 : 1, new[] { "参考来源：直接裁剪原画（贴图最像画）", "参考来源：干净设定图（正反两面，几何更稳）" });
             if ((src == 0) != painting) AI3DImporter.PreferPainting = src == 0;
+            if (src == 0)
+                EditorGUILayout.HelpBox("人物、雕像、黄自行车、水晶球、绣球花、红箱子能直接从画里抠出来；其它道具在画里被遮挡或太杂（实测抠完只剩噪声），会自动改用按原画重绘的设定图。生成失败也会自动换设定图重试。", MessageType.None);
             _concurrency = EditorGUILayout.IntSlider("并发任务数", _concurrency, 1, 6);
             _modelYaw = EditorGUILayout.Slider(new GUIContent("模型朝向补正(°)", "导入后发现人物/道具背对玩家时改成 180 再重新导入"), _modelYaw, -180f, 180f);
             if (EditorGUI.EndChangeCheck())
@@ -265,7 +267,7 @@ namespace VN.EditorTools.AI3D
                     EditorGUIUtility.PingObject(Resources.Load<GameObject>(AIAssetLibrary.ResourcesFolder + "/" + spec.id));
                 if (GUILayout.Button("参考图", GUILayout.Width(52)))
                 {
-                    bool usePainting = AI3DImporter.PreferPainting ? AI3DImporter.HasCrop(spec) : refs.Count == 0;
+                    bool usePainting = AI3DImporter.PreferPainting ? AI3DImporter.CropUsable(spec) : refs.Count == 0;
                     if (!usePainting && refs.Count > 0) EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<Texture2D>(refs[0]));
                     else if (AI3DImporter.HasCrop(spec))
                     {

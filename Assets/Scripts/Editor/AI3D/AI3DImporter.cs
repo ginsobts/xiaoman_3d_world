@@ -90,35 +90,64 @@ namespace VN.EditorTools.AI3D
 
         public static bool HasCrop(ReferencePropSpec spec) => spec.crop.width > 0f && spec.crop.height > 0f;
 
+        /// <summary>
+        /// 在原画里能被干净地抠出来的候选（用 Hunyuan3D 自带的去背景实测：主体占比 ≥ 7% 且抠出来的确实是它本身）。
+        /// 其它道具在画里太小、被遮挡或和背景混在一起，去背景后只剩一团噪声，
+        /// 直接拿原画裁剪生成只会得到废模型（Tripo / Meshy 还会白白扣点数），所以它们走「按原画重绘的设定图」。
+        /// </summary>
+        static readonly HashSet<string> PaintingIsolatable = new HashSet<string>
+        {
+            "suit_man", "piano_girl", "hooded_figure", "rabbit_girl", "street_girl", "courtyard_girl",
+            "statue", "bicycle_yellow", "crystal_ball", "hydrangea", "red_crate",
+        };
+
+        /// <summary>原画裁剪对这个道具是否可用（有裁剪框，且实测能抠出主体）。</summary>
+        public static bool CropUsable(ReferencePropSpec spec) =>
+            HasCrop(spec) && (PaintingIsolatable.Contains(spec.id) || !HasReferenceSheet(spec));
+
         /// <summary>这个道具当前实际会用哪种参考（给界面显示）。</summary>
         public static string DescribeSource(ReferencePropSpec spec)
         {
             int sheets = ReferenceSheetPaths(spec).Count;
             bool crop = HasCrop(spec);
-            if (PreferPainting) return crop ? "原画裁剪" : sheets > 0 ? $"设定图×{sheets}（无裁剪框）" : "缺少参考";
+            if (PreferPainting)
+            {
+                if (CropUsable(spec)) return sheets > 0 ? "原画裁剪（失败换设定图）" : "原画裁剪";
+                if (sheets > 0) return crop ? $"设定图×{sheets}（画里被遮挡，按原画重绘）" : $"设定图×{sheets}（无裁剪框）";
+                return "缺少参考";
+            }
             return sheets > 0 ? $"设定图×{sheets}" : crop ? "原画裁剪（无设定图）" : "缺少参考";
         }
 
         /// <summary>按「参考来源」设置取图：原画裁剪优先或设定图优先，另一种作为回退。</summary>
         public static List<byte[]> LoadReferenceImages(ReferencePropSpec spec, Action<string> log)
         {
-            var images = new List<byte[]>();
+            return LoadReferenceImages(spec, log, out _);
+        }
+
+        public static List<byte[]> LoadReferenceImages(ReferencePropSpec spec, Action<string> log, out bool usedPainting)
+        {
             var paths = ReferenceSheetPaths(spec);
             bool crop = HasCrop(spec);
-            bool usePainting = PreferPainting ? crop : (paths.Count == 0 && crop);
-            if (usePainting)
+            usedPainting = PreferPainting ? CropUsable(spec) : (paths.Count == 0 && crop);
+            if (usedPainting)
             {
-                images.Add(CropForSpec(spec));
                 log?.Invoke("参考：直接从原画裁剪（" + spec.sceneId + "）");
-                return images;
+                return new List<byte[]> { CropForSpec(spec) };
             }
-            foreach (var p in paths) images.Add(File.ReadAllBytes(p));
-            if (images.Count > 0)
-            {
-                log?.Invoke($"参考：设定图 {images.Count} 张: {string.Join(", ", paths.Select(Path.GetFileName))}");
-                return images;
-            }
+            if (PreferPainting && crop && paths.Count > 0)
+                log?.Invoke("原画里这个物件被遮挡 / 太杂，抠不出主体，改用按原画重绘的设定图");
+            if (paths.Count > 0) return LoadSheetImages(spec, log);
             throw new Exception($"没有设定图也没有裁剪框。请把正面图放到 {RefsFolder}/{spec.id}_front.png，或在 ReferenceSceneLibrary 里给它一个 crop 框");
+        }
+
+        /// <summary>只读设定图（原画裁剪失败后的回退）。</summary>
+        public static List<byte[]> LoadSheetImages(ReferencePropSpec spec, Action<string> log)
+        {
+            var paths = ReferenceSheetPaths(spec);
+            if (paths.Count == 0) throw new Exception($"{spec.id} 没有设定图可回退（{RefsFolder}）");
+            log?.Invoke($"参考：设定图 {paths.Count} 张: {string.Join(", ", paths.Select(Path.GetFileName))}");
+            return paths.Select(File.ReadAllBytes).ToList();
         }
 
         /// <summary>按规格裁剪参考图，四周留白并补成正方形，返回 PNG 字节；同时写一份到 Crops 目录方便检查。</summary>
@@ -141,23 +170,22 @@ namespace VN.EditorTools.AI3D
             int w = x1 - x0, h = y1 - y0;
             var pixels = src.GetPixels(x0, y0, w, h);
 
-            int size = Mathf.Max(w, h);
-            var dst = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            var fill = new Color[size * size];
-            Color bg = AverageEdge(pixels, w, h);
-            for (int i = 0; i < fill.Length; i++) fill[i] = bg;
-            dst.SetPixels(fill);
-            dst.SetPixels((size - w) / 2, (size - h) / 2, w, h, pixels);
+            // 不要再用纯色补成正方形：补出来的"卡片"会被去背景模型当成主体，
+            // 生成的模型会连着一块板。服务端去完背景会自己居中补方，这里只给紧凑裁剪。
+            var dst = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            dst.SetPixels(pixels);
             dst.Apply();
-            // 小裁剪放大到至少 1024px，服务端重建更稳定
+            // 小裁剪放大到长边至少 1024px，服务端重建更稳定
+            int size = Mathf.Max(w, h);
             if (size < 1024)
             {
-                int up = 1024;
-                var big = new Texture2D(up, up, TextureFormat.RGBA32, false);
-                var bigPixels = new Color[up * up];
-                for (int y = 0; y < up; y++)
-                for (int x = 0; x < up; x++)
-                    bigPixels[y * up + x] = dst.GetPixelBilinear((x + 0.5f) / up, (y + 0.5f) / up);
+                float k = 1024f / size;
+                int uw = Mathf.RoundToInt(w * k), uh = Mathf.RoundToInt(h * k);
+                var big = new Texture2D(uw, uh, TextureFormat.RGBA32, false);
+                var bigPixels = new Color[uw * uh];
+                for (int y = 0; y < uh; y++)
+                for (int x = 0; x < uw; x++)
+                    bigPixels[y * uw + x] = dst.GetPixelBilinear((x + 0.5f) / uw, (y + 0.5f) / uh);
                 big.SetPixels(bigPixels);
                 big.Apply();
                 Object.DestroyImmediate(dst);
@@ -172,16 +200,6 @@ namespace VN.EditorTools.AI3D
             return png;
         }
 
-        private static Color AverageEdge(Color[] pixels, int w, int h)
-        {
-            Color sum = Color.clear; int n = 0;
-            for (int x = 0; x < w; x += Mathf.Max(1, w / 32)) { sum += pixels[x]; sum += pixels[(h - 1) * w + x]; n += 2; }
-            for (int y = 0; y < h; y += Mathf.Max(1, h / 32)) { sum += pixels[y * w]; sum += pixels[y * w + w - 1]; n += 2; }
-            var c = sum / Mathf.Max(1, n);
-            c.a = 1f;
-            return c;
-        }
-
         // ---------- 生成 ----------
 
         public static async Task Run(JobState job, IImageTo3DProvider provider)
@@ -193,14 +211,29 @@ namespace VN.EditorTools.AI3D
             try
             {
                 job.stage = "准备参考图";
-                var images = LoadReferenceImages(job.spec, job.Log);
-
-                job.stage = "提交任务";
-                job.taskId = await provider.CreateTask(images, job.spec, job.Log);
-
-                job.stage = "生成模型";
+                bool usedPainting;
+                var images = LoadReferenceImages(job.spec, job.Log, out usedPainting);
                 int timeout = provider is HunyuanLocalProvider ? 25 : 40;
-                var model = await WaitFor(job, provider.Poll, job.taskId, 0, 60, timeout);
+
+                ProviderTaskResult model;
+                try
+                {
+                    job.stage = "提交任务";
+                    job.taskId = await provider.CreateTask(images, job.spec, job.Log);
+                    job.stage = "生成模型";
+                    model = await WaitFor(job, provider.Poll, job.taskId, 0, 60, timeout);
+                }
+                catch (Exception e) when (usedPainting && ReferenceSheetPaths(job.spec).Count > 0)
+                {
+                    // 原画里的小物件常被遮挡 / 和背景混在一起，服务端分不出主体会直接失败。
+                    // 这时自动换干净的设定图再来一次，而不是让整个任务报错。
+                    job.Log("原画裁剪生成失败（" + e.Message + "），改用设定图重试");
+                    images = LoadSheetImages(job.spec, job.Log);
+                    job.stage = "提交任务（设定图）";
+                    job.taskId = await provider.CreateTask(images, job.spec, job.Log);
+                    job.stage = "生成模型";
+                    model = await WaitFor(job, provider.Poll, job.taskId, 0, 60, timeout);
+                }
                 if (!model.HasModel) throw new Exception("服务没有返回模型地址: " + model.raw);
 
                 ProviderTaskResult final = model;
@@ -309,10 +342,25 @@ namespace VN.EditorTools.AI3D
         {
             var started = DateTime.UtcNow;
             string id = taskId;
+            int transportErrors = 0;
             while (true)
             {
                 await Task.Delay(6000);
-                var result = await poll(id, job.Log);
+                ProviderTaskResult result;
+                try
+                {
+                    result = await poll(id, job.Log);
+                    transportErrors = 0;
+                }
+                catch (System.Net.Http.HttpRequestException e)
+                {
+                    // 本地服务在重活（光栅化 / 展 UV）时偶尔会让连接被重置；云服务也会抖动。
+                    // 任务本身还在跑，重试几次再放弃。
+                    transportErrors++;
+                    job.Log($"查询状态失败（第 {transportErrors} 次）: {e.Message}");
+                    if (transportErrors >= 8) throw;
+                    continue;
+                }
                 job.progress = progressFrom + Mathf.RoundToInt(Mathf.Clamp01(result.progress / 100f) * (progressTo - progressFrom));
                 if (!string.IsNullOrEmpty(result.nextTaskId)) { id = result.nextTaskId; job.taskId = id; }
                 if (result.status == ProviderTaskStatus.Succeeded) { job.progress = progressTo; return result; }

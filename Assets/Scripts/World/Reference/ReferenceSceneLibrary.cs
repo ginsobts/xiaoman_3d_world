@@ -118,22 +118,22 @@ namespace VN.World
             {
                 // 温室钢琴
                 new ReferencePropSpec("upright_piano", "greenhouse", "黑色立式钢琴", "An old black upright piano with ivory keys and a music stand, side view." + style, new Rect(0.36f, 0.38f, 0.52f, 0.30f), 1.3f),
-                new ReferencePropSpec("piano_stool", "greenhouse", "钢琴凳", "A simple black wooden piano stool." + style, new Rect(0.50f, 0.58f, 0.22f, 0.18f), 0.5f),
+                new ReferencePropSpec("piano_stool", "greenhouse", "钢琴凳", "A simple black wooden piano stool." + style, new Rect(0.54f, 0.60f, 0.18f, 0.15f), 0.5f),
                 new ReferencePropSpec("hydrangea", "greenhouse", "蓝色绣球花丛", "A lush blue and lavender hydrangea bush with big round blooms and dark green leaves." + style, new Rect(0.0f, 0.60f, 0.42f, 0.36f), 1.1f),
-                new ReferencePropSpec("potted_vine", "greenhouse", "盆栽藤蔓", "A terracotta pot with trailing green vines and leaves." + style, new Rect(0.60f, 0.36f, 0.28f, 0.18f), 0.6f),
+                new ReferencePropSpec("potted_vine", "greenhouse", "盆栽藤蔓", "A terracotta pot with trailing green vines and leaves." + style, new Rect(0.65f, 0.27f, 0.23f, 0.17f), 0.6f),
                 // 林荫街道
                 new ReferencePropSpec("bicycle_blue", "street", "带车篮的自行车", "A classic city bicycle with a front wicker basket, blue-grey frame." + style, new Rect(0.24f, 0.58f, 0.24f, 0.22f), 1.0f),
                 new ReferencePropSpec("swing_frame", "street", "红色小滑梯", "A small red metal children's slide with a ladder, playground equipment." + style, new Rect(0.40f, 0.46f, 0.24f, 0.30f), 2.2f),
                 // 图书馆
                 new ReferencePropSpec("bookshelf", "library", "满书的高书架", "A tall dark wooden bookshelf filled with colorful old books." + style, new Rect(0.0f, 0.08f, 0.14f, 0.62f), 3.2f),
-                new ReferencePropSpec("armchair", "library", "布艺扶手椅", "A cozy cream plaid upholstered armchair with wooden legs." + style, new Rect(0.42f, 0.54f, 0.14f, 0.20f), 1.0f),
+                new ReferencePropSpec("armchair", "library", "布艺扶手椅", "A cozy cream plaid upholstered armchair with wooden legs." + style, new Rect(0.385f, 0.565f, 0.085f, 0.20f), 1.0f),
                 new ReferencePropSpec("table_lamp", "library", "台灯", "A vintage brass table lamp with a cream fabric shade." + style, new Rect(0.14f, 0.46f, 0.12f, 0.16f), 0.75f),
                 new ReferencePropSpec("statue", "library", "白色大理石雕像", "A small white marble statue of a standing woman in a draped dress on a square pedestal." + style, new Rect(0.03f, 0.45f, 0.10f, 0.22f), 1.9f),
                 new ReferencePropSpec("long_table", "library", "长木桌", "A long dark wooden library reading table." + style, new Rect(0.24f, 0.60f, 0.30f, 0.28f), 0.78f),
-                new ReferencePropSpec("wooden_chair", "library", "深绿木椅", "A simple dark green painted wooden dining chair with slatted back." + style, new Rect(0.60f, 0.66f, 0.14f, 0.26f), 0.95f),
-                new ReferencePropSpec("bell_lamp", "library", "铃铛吊灯", "A hanging pendant lamp shaped like a cream glass bell on a brass chain." + style, new Rect(0.02f, 0.0f, 0.14f, 0.22f), 1.2f),
+                new ReferencePropSpec("wooden_chair", "library", "深绿木椅", "A simple dark green painted wooden dining chair with slatted back." + style, new Rect(0.18f, 0.72f, 0.12f, 0.21f), 0.95f),
+                new ReferencePropSpec("bell_lamp", "library", "铃铛吊灯", "A hanging pendant lamp shaped like a cream glass bell on a brass chain." + style, new Rect(0.185f, 0.02f, 0.095f, 0.25f), 1.2f),
                 new ReferencePropSpec("crystal_ball", "library", "水晶球", "A glowing pale blue crystal ball on a small brass stand." + style, new Rect(0.88f, 0.58f, 0.12f, 0.16f), 0.45f),
-                new ReferencePropSpec("candelabra", "library", "烛台", "A brass three-arm candelabra with white candles." + style, new Rect(0.58f, 0.50f, 0.10f, 0.18f), 0.75f),
+                new ReferencePropSpec("candelabra", "library", "烛台", "A brass three-arm candelabra with white candles." + style, new Rect(0.63f, 0.45f, 0.07f, 0.22f), 0.75f),
                 // 橘子树院子
                 new ReferencePropSpec("bicycle_yellow", "orange", "黄色自行车", "A bright yellow vintage ladies bicycle with a rear rack." + style, new Rect(0.19f, 0.64f, 0.32f, 0.28f), 1.0f),
                 new ReferencePropSpec("cat", "orange", "小猫", "A small cream and orange cat sitting upright, looking up." + style, new Rect(0.53f, 0.78f, 0.10f, 0.16f), 0.55f),
