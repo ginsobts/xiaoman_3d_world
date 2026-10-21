@@ -64,3 +64,8 @@ __pycache__/
 /鍙傝�冨浘/
 /tools/tts/ref/
 /tools/tts/reference/
+
+# AI 图生 3D 的裁剪预览与原始下载（prefab 在 Assets/Resources/AI3D 进仓库）
+/Assets/Art/AI3D/Crops/
+/Assets/Art/AI3D/Crops.meta
+

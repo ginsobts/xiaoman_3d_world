@@ -22,6 +22,7 @@ namespace VN.World
         public PlayerController Player { get; private set; }
         public ThirdPersonCamera CameraRig { get; private set; }
         public WorldHUD Hud { get; private set; }
+        public LightingDirector Lighting { get; private set; }
         public WorldLevel Level { get; private set; }
         public MultiplayerSession Multiplayer { get; private set; }
         public LocalMultiplayerManager LocalMultiplayer { get; private set; }
@@ -115,6 +116,12 @@ namespace VN.World
 
             Hud = WorldHUD.Create(GameManager.Instance.Root);
             EnsureInteractiveContent();
+            // 参考画作场景（远处的五个立体画廊 + 村庄南侧的画框传送门）与分区光照 / 后期
+            ReferenceSceneBuilder.Ensure(Level);
+            Lighting = GetComponent<LightingDirector>();
+            if (Lighting == null) Lighting = gameObject.AddComponent<LightingDirector>();
+            Lighting.Init(_camera);
+            Lighting.ApplyForPosition(pos);
             BuildSystem = gameObject.AddComponent<RuntimeBuildSystem>();
             BuildSystem.Init(this, Multiplayer, LocalMultiplayer, _camera);
             MultiplayerHUD.Create(GameManager.Instance.Root, this, Multiplayer, LocalMultiplayer);

@@ -9,6 +9,7 @@ namespace VN.Multiplayer
     {
         public int instrumentId = 1;
         public int noteCount = 8;
+        public InstrumentAudio.Timbre timbre = InstrumentAudio.Timbre.Xylophone;
 
         private int _nextNote;
         private AudioSource _audio;
@@ -59,7 +60,7 @@ namespace VN.Multiplayer
         private void PlayLocal(int note)
         {
             if (_audio == null) return;
-            _audio.PlayOneShot(InstrumentAudio.GetNote(note), 1f);
+            _audio.PlayOneShot(InstrumentAudio.GetNote(note, timbre), 1f);
             FairytaleVFX.Spawn("GoldenSparkle", transform.position + Vector3.up * 1.5f, 1.6f, 0.8f);
         }
 

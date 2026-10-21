@@ -29,7 +29,7 @@ namespace VN.World
         private static readonly Dictionary<string, Material> Materials = new Dictionary<string, Material>();
         private static Shader _shader;
 
-        private static Color Hex(string value)
+        public static Color Hex(string value)
         {
             ColorUtility.TryParseHtmlString("#" + value, out var color);
             return color;
@@ -69,7 +69,7 @@ namespace VN.World
             return mat;
         }
 
-        private static GameObject Root(string name, Transform parent, Vector3 localPosition)
+        public static GameObject Root(string name, Transform parent, Vector3 localPosition)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -77,7 +77,7 @@ namespace VN.World
             return go;
         }
 
-        private static GameObject Part(PrimitiveType type, string name, Transform parent,
+        public static GameObject Part(PrimitiveType type, string name, Transform parent,
             Vector3 localPosition, Vector3 localScale, Color color, string texture = null,
             Vector3? euler = null, bool keepCollider = false, bool glow = false)
         {
@@ -97,7 +97,7 @@ namespace VN.World
             return go;
         }
 
-        private static GameObject Box(string name, Transform parent, Vector3 center, Vector3 size,
+        public static GameObject Box(string name, Transform parent, Vector3 center, Vector3 size,
             Color color, string texture = null, bool keepCollider = false)
         {
             return Part(PrimitiveType.Cube, name, parent, center, size, color, texture, null, keepCollider);
@@ -392,7 +392,7 @@ namespace VN.World
             return root;
         }
 
-        private static float RandomRange(System.Random random, float min, float max)
+        public static float RandomRange(System.Random random, float min, float max)
         {
             return min + (float)random.NextDouble() * (max - min);
         }

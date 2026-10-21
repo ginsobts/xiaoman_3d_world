@@ -170,6 +170,8 @@ namespace VN.World
             spawn.transform.localPosition = new Vector3(0f, 0f, -8f);
             spawn.transform.localRotation = Quaternion.identity;
             level.spawnPoint = spawn.transform;
+            // 五幅参考画作对应的立体场景与画框传送门由 WorldController 在运行时 ReferenceSceneBuilder.Ensure 生成，
+            // 需要在 Scene 视图里手工编辑时用菜单「3D世界/在当前场景生成参考画作场景」烘进场景。
 
             // 编辑场景时也能看到角色出生位置；进入 Play 后 WorldController 会隐藏它，
             // 并在同一位置生成真正带 CharacterController 的玩家。
