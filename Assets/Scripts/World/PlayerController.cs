@@ -1,4 +1,5 @@
 using UnityEngine;
+using VN.Multiplayer;
 
 namespace VN.World
 {
@@ -31,26 +32,37 @@ namespace VN.World
         public float CurrentSpeed => new Vector2(_velocity.x, _velocity.z).magnitude;
 
         private CharacterController _controller;
+        private PlayerInputSlot _inputSlot;
         private Vector3 _velocity;          // 实际速度（含竖直分量）
         private Vector3 _planarTarget;      // 期望的水平速度
 
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();
+            _inputSlot = GetComponent<PlayerInputSlot>();
         }
 
         private void Update()
         {
+            // MultiplayerAvatar 在运行时为角色追加独立输入槽，可能晚于本组件 Awake。
+            if (_inputSlot == null) _inputSlot = GetComponent<PlayerInputSlot>();
             Vector3 input = Vector3.zero;
             bool run = false;
             bool jump = false;
 
             if (InputEnabled)
             {
-                input = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
+                Vector2 move = _inputSlot != null
+                    ? _inputSlot.ReadMove()
+                    : new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+                input = new Vector3(move.x, 0f, move.y);
                 if (input.sqrMagnitude > 1f) input.Normalize();
-                run = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-                jump = allowJump && Input.GetKeyDown(KeyCode.Space);
+                run = _inputSlot != null
+                    ? _inputSlot.RunHeld
+                    : Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                jump = allowJump && (_inputSlot != null
+                    ? _inputSlot.JumpDown
+                    : Input.GetKeyDown(KeyCode.Space));
             }
 
             // 输入 -> 相机相对方向

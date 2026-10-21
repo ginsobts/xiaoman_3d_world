@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using VN.Multiplayer;
 
 namespace VN.World
 {
@@ -22,6 +23,9 @@ namespace VN.World
         public ThirdPersonCamera CameraRig { get; private set; }
         public WorldHUD Hud { get; private set; }
         public WorldLevel Level { get; private set; }
+        public MultiplayerSession Multiplayer { get; private set; }
+        public LocalMultiplayerManager LocalMultiplayer { get; private set; }
+        public RuntimeBuildSystem BuildSystem { get; private set; }
 
         public KeyCode interactKey = KeyCode.E;
 
@@ -88,6 +92,11 @@ namespace VN.World
             Player = playerGO.GetComponent<PlayerController>();
             _detector = playerGO.GetComponent<InteractionDetector>();
 
+            // 联机层始终存在；离线时不打开套接字，因此单机游玩路径保持不变。
+            Multiplayer = gameObject.AddComponent<MultiplayerSession>();
+            LocalMultiplayer = gameObject.AddComponent<LocalMultiplayerManager>();
+            LocalMultiplayer.Init(this, Multiplayer, _camera, playerGO, pos, yaw);
+
             // 相机
             if (_camera != null)
             {
@@ -99,12 +108,16 @@ namespace VN.World
 
                 CameraRig = _camera.GetComponent<ThirdPersonCamera>();
                 if (CameraRig == null) CameraRig = _camera.gameObject.AddComponent<ThirdPersonCamera>();
-                CameraRig.Target = Player.transform;
+                CameraRig.Target = LocalMultiplayer.CameraTarget;
                 CameraRig.SnapBehind(yaw);
                 Player.CameraReference = _camera.transform;
             }
 
             Hud = WorldHUD.Create(GameManager.Instance.Root);
+            EnsureInteractiveContent();
+            BuildSystem = gameObject.AddComponent<RuntimeBuildSystem>();
+            BuildSystem.Init(this, Multiplayer, LocalMultiplayer, _camera);
+            MultiplayerHUD.Create(GameManager.Instance.Root, this, Multiplayer, LocalMultiplayer);
 
             SetMode(WorldMode.Exploring);
             if (loadSave) Hud.Toast(GameLanguage.Loaded);
@@ -121,11 +134,7 @@ namespace VN.World
 
             if (Mode != WorldMode.Exploring) return;
 
-            var target = _detector != null ? _detector.Current : null;
-            Hud.SetPrompt(target != null ? target.Prompt : "");
-
-            if (target != null && Input.GetKeyDown(interactKey))
-                target.Interact(this);
+            Hud.SetPrompt(LocalMultiplayer != null ? LocalMultiplayer.CurrentPrompt : "");
         }
 
         // ---------- 模式切换 ----------
@@ -135,16 +144,7 @@ namespace VN.World
             Mode = mode;
             bool exploring = mode == WorldMode.Exploring;
 
-            if (Player != null)
-            {
-                Player.InputEnabled = exploring;
-                if (!exploring) Player.Halt();
-            }
-            if (_detector != null)
-            {
-                _detector.enabled = exploring;
-                if (!exploring) _detector.Clear();
-            }
+            if (LocalMultiplayer != null) LocalMultiplayer.SetGameplayEnabled(exploring);
             if (CameraRig != null) CameraRig.InputEnabled = exploring;
 
             if (Hud != null)
@@ -156,6 +156,19 @@ namespace VN.World
             Cursor.lockState = exploring ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !exploring;
             Time.timeScale = mode == WorldMode.Paused ? 0f : 1f;
+        }
+
+        private void EnsureInteractiveContent()
+        {
+            if (FindObjectOfType<PlayableInstrument>() != null) return;
+            var xylophone = FairytaleArt.BuildXylophone(Level.transform, new Vector3(9f, 0f, 3f), -18f);
+            var box = xylophone.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, 0.65f, 0f);
+            box.size = new Vector3(3.6f, 1.4f, 1.7f);
+            var instrument = xylophone.AddComponent<PlayableInstrument>();
+            instrument.instrumentId = 1;
+            instrument.displayName = GameLanguage.IsEnglish ? "rainbow xylophone" : "彩虹木琴";
+            instrument.interactRadius = 4f;
         }
 
         // ---------- 对话 ----------

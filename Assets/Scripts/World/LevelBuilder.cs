@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using VN.Multiplayer;
 
 namespace VN.World
 {
@@ -203,6 +204,14 @@ namespace VN.World
             FairytaleArt.BuildCottage(root, new Vector3(20f, 0f, 13f), -22f);
             FairytaleArt.BuildWell(root, new Vector3(-7f, 0f, 7f));
             FairytaleArt.BuildBench(root, new Vector3(8f, 0f, -5f), -25f);
+            var xylophone = FairytaleArt.BuildXylophone(root, new Vector3(9f, 0f, 3f), -18f);
+            var instrumentCollider = xylophone.AddComponent<BoxCollider>();
+            instrumentCollider.center = new Vector3(0f, 0.65f, 0f);
+            instrumentCollider.size = new Vector3(3.6f, 1.4f, 1.7f);
+            var instrument = xylophone.AddComponent<PlayableInstrument>();
+            instrument.instrumentId = 1;
+            instrument.displayName = GameLanguage.IsEnglish ? "rainbow xylophone" : "彩虹木琴";
+            instrument.interactRadius = 4f;
             FairytaleArt.BuildFence(root, new Vector3(-19f, 0f, 8f), 7, 10f);
             FairytaleArt.BuildFence(root, new Vector3(19f, 0f, 6f), 6, -12f);
             FairytaleArt.BuildLantern(root, new Vector3(-3f, 0f, -10f));

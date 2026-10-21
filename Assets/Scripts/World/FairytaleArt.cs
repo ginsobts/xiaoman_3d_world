@@ -319,6 +319,27 @@ namespace VN.World
             return root;
         }
 
+        public static GameObject BuildXylophone(Transform parent, Vector3 position, float yaw = 0f)
+        {
+            var root = Root("RainbowXylophone", parent, position);
+            root.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            Box("Stand", root.transform, new Vector3(0f, 0.55f, 0f),
+                new Vector3(3.2f, 0.18f, 1.25f), Bark, "WoodPlanks", true);
+            Color[] colors = { Rose, Roof, Mustard, LeafLight, Teal, Blue, Crystal, Cream };
+            for (int i = 0; i < 8; i++)
+            {
+                float x = (i - 3.5f) * 0.38f;
+                float length = 1.05f - i * 0.055f;
+                Box("Note_" + i, root.transform, new Vector3(x, 0.72f, 0f),
+                    new Vector3(0.3f, 0.12f, length), colors[i]);
+            }
+            Box("LegL", root.transform, new Vector3(-1.15f, 0.25f, 0f),
+                new Vector3(0.18f, 0.6f, 0.8f), Wood);
+            Box("LegR", root.transform, new Vector3(1.15f, 0.25f, 0f),
+                new Vector3(0.18f, 0.6f, 0.8f), Wood);
+            return root;
+        }
+
         public static GameObject BuildLantern(Transform parent, Vector3 position)
         {
             var root = Root("CrayonLantern", parent, position);
