@@ -65,7 +65,7 @@ __pycache__/
 /tools/tts/ref/
 /tools/tts/reference/
 
-# AI ͼ�� 3D �Ĳü�Ԥ����ԭʼ���أ�prefab �� Assets/Resources/AI3D ���ֿ⣩
+# AI ͼ�� 3D �Ĳü�Ԥ����ԭʼ���أ�prefab �� Assets/Resources/AI3D ���ֿ⣩
 /Assets/Art/AI3D/Crops/
 /Assets/Art/AI3D/Crops.meta
 
@@ -73,3 +73,10 @@ __pycache__/
 # Marble 原始下载（SPZ/GLB 很大，转换后的资源在 Assets/Resources/AI3D/Marble）
 /Assets/Art/AI3D/Marble/
 /Assets/Art/AI3D/Marble.meta
+
+# AI 生成的原始模型下载（已转成 Resources/AI3D/Meshes/*.asset，贴图保留在 Raw 里给材质引用）
+/Assets/Art/AI3D/Raw/**/*.glb
+/Assets/Art/AI3D/Raw/**/*.glb.meta
+/Assets/Art/AI3D/Raw/**/*.fbx
+/Assets/Art/AI3D/Raw/**/*.fbx.meta
+/Assets/Art/AI3D/Raw/**/*.zip

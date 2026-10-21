@@ -236,6 +236,37 @@ namespace VN.Editor
                 RenderTexture.active = null;
                 System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, view.id + ".png"), tex.EncodeToPNG());
             }
+
+            // 已生成的 AI 道具近景：每个 Resources/AI3D/<id>.prefab 在它所在场景的光照下拍一张，方便检查贴图 / 朝向 / 比例
+            foreach (var spec in ReferenceSceneLibrary.Props)
+            {
+                var prefab = Resources.Load<GameObject>(VN.World.AIAssetLibrary.ResourcesFolder + "/" + spec.id);
+                if (prefab == null) continue;
+                var def = ReferenceSceneLibrary.Scene(spec.sceneId);
+                director.SetImmediate(def.Lighting);
+                post.Current = director.Current;
+                var inst = UnityEngine.Object.Instantiate(prefab);
+                // 放到场景正上方 300 m 的空中，下面垫一块临时地板，避免被场景里的墙挡住
+                Vector3 at = def.origin + new Vector3(0f, 300f, 0f);
+                var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+                floor.transform.position = at - new Vector3(0f, 0.01f, 0f);
+                floor.transform.localScale = Vector3.one * 2f;
+                inst.transform.position = at;
+                inst.transform.rotation = Quaternion.Euler(0f, 355f, 0f); // 相机在 330° 方向，正面略偏 25° 的四分之三视角
+                float h = Mathf.Max(0.3f, spec.targetHeight);
+                float dist = h * 1.6f + 0.4f;
+                cam.transform.position = at + new Vector3(0f, h * 0.55f, 0f) + Quaternion.Euler(0f, 150f, 0f) * Vector3.forward * -dist;
+                cam.transform.LookAt(at + new Vector3(0f, h * 0.5f, 0f));
+                cam.targetTexture = rt;
+                cam.Render();
+                RenderTexture.active = rt;
+                tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                tex.Apply();
+                RenderTexture.active = null;
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, "ai_" + spec.id + ".png"), tex.EncodeToPNG());
+                UnityEngine.Object.DestroyImmediate(inst);
+                UnityEngine.Object.DestroyImmediate(floor);
+            }
             cam.targetTexture = null;
             UnityEngine.Object.DestroyImmediate(rt);
             UnityEngine.Object.DestroyImmediate(tex);

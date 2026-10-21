@@ -39,11 +39,12 @@ if not exist "%USERPROFILE%\.u2net\u2net.onnx" (
     )
 )
 
-REM 模型：形状（mini-turbo，3.6 GB）+ 贴图（paint-turbo 6.4 GB + delight 4.1 GB）。已存在的文件会跳过。
+REM 模型：形状（mini-turbo 3.8 GB + 加速解码器 0.4 GB）+ 贴图（paint-turbo 5.6 GB + delight 4.5 GB）。已存在的文件会跳过。
+REM 第一次用贴图时服务会把 UNet 的 safetensors 转成 .bin（约 10 秒，一次性）。
 set HF="%ROOT%\python_standalone\python.exe" -s -m huggingface_hub.cli.hf
 if not exist "%HY3DGEN_MODELS%\tencent\Hunyuan3D-2mini\hunyuan3d-dit-v2-mini-turbo\model.fp16.safetensors" (
     echo [1/2] 下载形状模型 Hunyuan3D-2mini turbo ...
-    %HF% download tencent/Hunyuan3D-2mini --include "hunyuan3d-dit-v2-mini-turbo/*" --exclude "*.ckpt" --local-dir "%HY3DGEN_MODELS%\tencent\Hunyuan3D-2mini"
+    %HF% download tencent/Hunyuan3D-2mini --include "hunyuan3d-dit-v2-mini-turbo/*" "hunyuan3d-vae-v2-mini-turbo/*" --exclude "*.ckpt" --local-dir "%HY3DGEN_MODELS%\tencent\Hunyuan3D-2mini"
 )
 if not exist "%HY3DGEN_MODELS%\tencent\Hunyuan3D-2\hunyuan3d-paint-v2-0-turbo\unet\diffusion_pytorch_model.safetensors" (
     echo [2/2] 下载贴图模型 paint-turbo + delight ...
