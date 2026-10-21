@@ -175,8 +175,9 @@ namespace VN.World
             var preview = FairytaleArt.BuildExplorer(spawn.transform);
             preview.name = "PlayerPreview_EDIT_ONLY";
 
-            // 开场旁白触发区
-            var introZone = new GameObject("IntroTrigger");
+            // 可选开场旁白触发区。默认关闭，保证 Play 后玩家立刻能看到角色并自由移动；
+            // 设计者需要强制开场对话时，可在场景里手动启用。
+            var introZone = new GameObject("OptionalIntroTrigger_DISABLED");
             introZone.transform.SetParent(root, false);
             introZone.transform.localPosition = new Vector3(0f, 1.5f, -8f);
             var introCol = introZone.AddComponent<BoxCollider>();
@@ -186,6 +187,7 @@ namespace VN.World
             introTrig.triggerId = "intro";
             introTrig.storyFile = story;
             introTrig.startNode = "intro_1";
+            introZone.SetActive(false);
 
             // 树
             foreach (var p in new[]
