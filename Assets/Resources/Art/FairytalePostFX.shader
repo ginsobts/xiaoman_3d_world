@@ -13,7 +13,8 @@ Shader "Hidden/Xiaoman/Fairytale PostFX"
 
         sampler2D _MainTex;
         float4 _MainTex_TexelSize;
-        sampler2D _BloomTex;
+        sampler2D _BloomTex;   // 近距离柔光
+        sampler2D _BloomTex2;  // 远距离光晕
         float _Threshold;
         float _BloomIntensity;
         float _Exposure;
@@ -40,12 +41,12 @@ Shader "Hidden/Xiaoman/Fairytale PostFX"
             return o;
         }
 
-        float3 Luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+        float Luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
 
         fixed4 fragPrefilter(v2f i) : SV_Target
         {
             float3 c = tex2D(_MainTex, i.uv).rgb;
-            float l = Luma(c).x;
+            float l = Luma(c);
             float soft = saturate((l - _Threshold) / max(0.001, 1.0 - _Threshold));
             return fixed4(c * soft * soft, 1);
         }
@@ -67,7 +68,7 @@ Shader "Hidden/Xiaoman/Fairytale PostFX"
         fixed4 fragComposite(v2f i) : SV_Target
         {
             float3 c = tex2D(_MainTex, i.uv).rgb;
-            float3 bloom = tex2D(_BloomTex, i.uv).rgb;
+            float3 bloom = tex2D(_BloomTex, i.uv).rgb * 0.55 + tex2D(_BloomTex2, i.uv).rgb * 0.8;
 
             // 轻微的水彩渗化：原图与柔化版混合，边缘变软
             float2 px = _MainTex_TexelSize.xy * 1.5;
@@ -79,8 +80,8 @@ Shader "Hidden/Xiaoman/Fairytale PostFX"
             c += bloom * _BloomIntensity;
             c *= _Exposure * _Tint.rgb;
 
-            float l = Luma(c).x;
-            c = lerp(l.xxx, c, _Saturation);
+            float l = Luma(c);
+            c = lerp(float3(l, l, l), c, _Saturation);
             c = (c - 0.5) * _Contrast + 0.5;
 
             // 分离色调：暗部和亮部各自偏色，模拟彩铅纸面上的暖光冷影
@@ -98,10 +99,38 @@ Shader "Hidden/Xiaoman/Fairytale PostFX"
         }
         ENDCG
 
-        Pass { CGPROGRAM #pragma vertex vert #pragma fragment fragPrefilter ENDCG }
-        Pass { CGPROGRAM #pragma vertex vert #pragma fragment fragBlurH ENDCG }
-        Pass { CGPROGRAM #pragma vertex vert #pragma fragment fragBlurV ENDCG }
-        Pass { CGPROGRAM #pragma vertex vert #pragma fragment fragComposite ENDCG }
+        // 0: 亮部提取
+        Pass
+        {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment fragPrefilter
+            ENDCG
+        }
+        // 1: 横向模糊
+        Pass
+        {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment fragBlurH
+            ENDCG
+        }
+        // 2: 纵向模糊
+        Pass
+        {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment fragBlurV
+            ENDCG
+        }
+        // 3: 合成（Bloom、曝光、色调、暗角、颗粒）
+        Pass
+        {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment fragComposite
+            ENDCG
+        }
     }
     FallBack Off
 }

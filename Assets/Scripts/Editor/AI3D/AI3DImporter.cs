@@ -79,6 +79,20 @@ namespace VN.EditorTools.AI3D
             dst.SetPixels(fill);
             dst.SetPixels((size - w) / 2, (size - h) / 2, w, h, pixels);
             dst.Apply();
+            // 小裁剪放大到至少 1024px，服务端重建更稳定
+            if (size < 1024)
+            {
+                int up = 1024;
+                var big = new Texture2D(up, up, TextureFormat.RGBA32, false);
+                var bigPixels = new Color[up * up];
+                for (int y = 0; y < up; y++)
+                for (int x = 0; x < up; x++)
+                    bigPixels[y * up + x] = dst.GetPixelBilinear((x + 0.5f) / up, (y + 0.5f) / up);
+                big.SetPixels(bigPixels);
+                big.Apply();
+                Object.DestroyImmediate(dst);
+                dst = big;
+            }
             byte[] png = dst.EncodeToPNG();
             Object.DestroyImmediate(src);
             Object.DestroyImmediate(dst);

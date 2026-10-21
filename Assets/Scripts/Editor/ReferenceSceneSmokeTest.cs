@@ -71,7 +71,80 @@ namespace VN.Editor
             }
 
             Debug.Log($"[Xiaoman Reference] smoke test passed: portals={portals} zones={zones} props={markers} gulls={gulls} shafts={shafts} crops={crops}");
+            if (Environment.GetEnvironmentVariable("XIAOMAN_REF_SHOTS") is string shotDir && !string.IsNullOrEmpty(shotDir))
+                CaptureAll(director, shotDir);
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        }
+
+        /// <summary>把每个参考场景从出生点视角渲染成 PNG（含后期），用于离线检查效果。</summary>
+        [MenuItem("3D世界/截图参考画作场景到 Temp")]
+        public static void CaptureFromMenu()
+        {
+            var level = UnityEngine.Object.FindObjectOfType<WorldLevel>();
+            if (level == null) { Debug.LogWarning("没有 WorldLevel"); return; }
+            ReferenceSceneBuilder.Ensure(level);
+            var director = level.GetComponent<LightingDirector>() ?? level.gameObject.AddComponent<LightingDirector>();
+            director.Init(Camera.main);
+            CaptureAll(director, System.IO.Path.Combine(Application.dataPath, "../Temp/RefShots"));
+        }
+
+        public static void CaptureAll(LightingDirector director, string dir)
+        {
+            System.IO.Directory.CreateDirectory(dir);
+            var camGO = new GameObject("RefShotCamera");
+            var cam = camGO.AddComponent<Camera>();
+            cam.fieldOfView = 55f;
+            cam.nearClipPlane = 0.1f;
+            cam.farClipPlane = 1200f;
+            cam.clearFlags = CameraClearFlags.Skybox;
+            cam.allowHDR = true;
+            cam.allowMSAA = true;
+            var post = camGO.AddComponent<FairytalePostProcess>();
+            director.Init(cam);
+            Physics.SyncTransforms();
+
+            var rt = new RenderTexture(1600, 900, 24, RenderTextureFormat.ARGB32) { antiAliasing = 4 };
+            var tex = new Texture2D(1600, 900, TextureFormat.RGB24, false);
+            var views = new (string id, Vector3 offset, float yaw, float pitch)[]
+            {
+                ("village", new Vector3(-4f, 1.2f, -16f), 200f, 14f),
+                ("greenhouse", Vector3.zero, 0f, 8f),
+                ("seaside", Vector3.zero, 0f, 6f),
+                ("street", Vector3.zero, 0f, 6f),
+                ("library", Vector3.zero, 0f, 6f),
+                ("orange", Vector3.zero, 0f, 10f),
+            };
+            foreach (var view in views)
+            {
+                Vector3 pos; float yaw = view.yaw;
+                if (view.id == "village")
+                {
+                    pos = view.offset;
+                    director.SetImmediate(LightingPreset.Village());
+                }
+                else
+                {
+                    var def = ReferenceSceneLibrary.Scene(view.id);
+                    pos = def.origin + def.spawnLocal + view.offset;
+                    yaw = def.spawnYaw + view.yaw;
+                    director.SetImmediate(def.Lighting);
+                }
+                post.Current = director.Current;
+                cam.transform.position = pos + new Vector3(0f, 1.7f, 0f) - Quaternion.Euler(0f, yaw, 0f) * Vector3.forward * 1.5f;
+                cam.transform.rotation = Quaternion.Euler(view.pitch, yaw, 0f);
+                cam.targetTexture = rt;
+                cam.Render();
+                RenderTexture.active = rt;
+                tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                tex.Apply();
+                RenderTexture.active = null;
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, view.id + ".png"), tex.EncodeToPNG());
+            }
+            cam.targetTexture = null;
+            UnityEngine.Object.DestroyImmediate(rt);
+            UnityEngine.Object.DestroyImmediate(tex);
+            UnityEngine.Object.DestroyImmediate(camGO);
+            Debug.Log("[Xiaoman Reference] screenshots written to " + dir);
         }
     }
 }

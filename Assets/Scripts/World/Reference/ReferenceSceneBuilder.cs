@@ -101,8 +101,11 @@ namespace VN.World
             Box("LegR", root.transform, new Vector3(0.7f, 1.0f, 0.2f), new Vector3(0.08f, 2.1f, 0.08f), frame, "WoodPlanks").transform.localRotation = Quaternion.Euler(6f, 0f, -8f);
             Box("LegB", root.transform, new Vector3(0f, 1.0f, 0.55f), new Vector3(0.08f, 2.0f, 0.08f), frame, "WoodPlanks").transform.localRotation = Quaternion.Euler(-22f, 0f, 0f);
             Box("Tray", root.transform, new Vector3(0f, 0.7f, 0.1f), new Vector3(1.5f, 0.06f, 0.2f), frame, "WoodPlanks");
-            // 画框
-            float w = 1.6f, h = 2.0f;
+            // 画框：按原图（裁剪后）的长宽比决定尺寸，面积约 3.2 m²
+            var tex = Resources.Load<Texture2D>("Art/References/" + image) ?? Resources.Load<Texture2D>("Art/" + image);
+            float aspect = tex != null ? (tex.width * uv.width) / Mathf.Max(1f, tex.height * uv.height) : 0.8f;
+            aspect = Mathf.Clamp(aspect, 0.55f, 1.9f);
+            float h = Mathf.Sqrt(3.2f / aspect), w = h * aspect;
             Box("Frame", root.transform, new Vector3(0f, 0.72f + h * 0.5f, 0.12f), new Vector3(w + 0.16f, h + 0.16f, 0.08f), Hex("D9B06A"));
             var canvas = GameObject.CreatePrimitive(PrimitiveType.Quad);
             canvas.name = "Canvas";
@@ -111,7 +114,6 @@ namespace VN.World
             canvas.transform.localScale = new Vector3(w, h, 1f);
             Kill(canvas.GetComponent<Collider>());
             var canvasMat = new Material(Shader.Find("Unlit/Texture") ?? Shader.Find("Standard")) { name = "Canvas_" + image };
-            var tex = Resources.Load<Texture2D>("Art/References/" + image) ?? Resources.Load<Texture2D>("Art/" + image);
             if (tex != null)
             {
                 canvasMat.mainTexture = tex;
@@ -123,8 +125,8 @@ namespace VN.World
             Part(PrimitiveType.Cube, "Glow", root.transform, new Vector3(0f, 0.72f + h * 0.5f, 0.14f), new Vector3(w + 0.3f, h + 0.3f, 0.02f), Cream, null, null, false, true);
 
             var col = root.AddComponent<BoxCollider>();
-            col.center = new Vector3(0f, 1.3f, 0.2f);
-            col.size = new Vector3(1.9f, 2.6f, 0.9f);
+            col.center = new Vector3(0f, 0.72f + h * 0.5f, 0.2f);
+            col.size = new Vector3(w + 0.3f, h + 0.9f, 0.9f);
             var portal = root.AddComponent<PaintingPortal>();
             portal.displayName = title;
             portal.destinationTitle = title;
@@ -132,7 +134,7 @@ namespace VN.World
             portal.targetYaw = targetYaw;
             portal.lightingId = lightingId;
             portal.interactRadius = 3.2f;
-            WorldLabel.Attach(root, title, 3.1f);
+            WorldLabel.Attach(root, title, 0.72f + h + 0.5f);
             return root;
         }
 
@@ -394,13 +396,18 @@ namespace VN.World
         {
             Vector3 sun = LightingPreset.Seaside().sunEuler;
             Floor(root, "Meadow", Vector3.zero, new Vector2(44f, 20f), Hex("8FB06A"), "Grass", 8f);
-            Box("CliffEdge", root, new Vector3(0f, -1.0f, 10.2f), new Vector3(44f, 2.2f, 0.6f), Hex("7A7A5E"), "Dirt", true);
+            Box("CliffEdge", root, new Vector3(0f, -1.0f, 10.2f), new Vector3(44f, 2.2f, 0.6f), Hex("A9B59A"), "Grass", true);
+            // 岸边的浅滩与白浪
+            Floor(root, "Shallows", new Vector3(0f, -1.22f, 12.5f), new Vector2(60f, 5f), Hex("E6EEF2"), "Sand", 6f);
 
             // 海面：大平面 + 滚动水纹，近岸再铺一层浪花
-            var sea = Floor(root, "Sea", new Vector3(0f, -1.3f, 130f), new Vector2(420f, 240f), Hex("5C86B8"), "Water", 60f);
+            var sea = Floor(root, "Sea", new Vector3(0f, -1.3f, 130f), new Vector2(420f, 240f), Hex("C3D6E6"), "Water", 60f);
             sea.AddComponent<UVScroll>().speed = new Vector2(0.015f, 0.006f);
             Kill(sea.GetComponent<Collider>());
-            var foam = Floor(root, "Foam", new Vector3(0f, -1.25f, 16f), new Vector2(60f, 12f), Hex("CFE2EC"), "Water", 10f);
+            var nearSea = Floor(root, "SeaNear", new Vector3(0f, -1.28f, 34f), new Vector2(120f, 48f), Hex("A3BFD8"), "Water", 24f);
+            nearSea.AddComponent<UVScroll>().speed = new Vector2(0.02f, 0.012f);
+            Kill(nearSea.GetComponent<Collider>());
+            var foam = Floor(root, "Foam", new Vector3(0f, -1.25f, 16f), new Vector2(60f, 12f), Hex("DCE9F0"), "Water", 10f);
             foam.AddComponent<UVScroll>().speed = new Vector2(-0.02f, 0.01f);
             Kill(foam.GetComponent<Collider>());
 
@@ -435,8 +442,8 @@ namespace VN.World
                 gull.transform.localScale = Vector3.one * RandomRange(random, 0.8f, 1.3f);
             }
 
-            for (int i = 0; i < 4; i++)
-                Shaft(root, new Vector3(-6f + i * 4f, 6f, 6f), sun, 14f, 2.5f, Hex("FFFFFF"), 0.08f);
+            // 阴天海边不要明显光柱，只留一道很淡的天光
+            Shaft(root, new Vector3(2f, 9f, 12f), sun, 20f, 7f, Hex("FFFFFF"), 0.03f);
             Bounds(root, 21f, 10f);
         }
 
@@ -473,7 +480,7 @@ namespace VN.World
 
             // 树冠漏下的光柱和斑驳光斑
             for (int i = 0; i < 9; i++)
-                Shaft(root, new Vector3(RandomRange(random, -7f, 7f), 5.5f, RandomRange(random, -8f, 8f)), sun, 11f, RandomRange(random, 0.6f, 1.6f), Hex("FFF3C4"), 0.18f);
+                Shaft(root, new Vector3(RandomRange(random, -7f, 7f), 5.5f, RandomRange(random, -8f, 8f)), sun, 11f, RandomRange(random, 0.6f, 1.6f), Hex("FFF3C4"), 0.12f);
             for (int i = 0; i < 30; i++)
                 GlowPatch(root, new Vector3(RandomRange(random, -8f, 8f), 0.05f, RandomRange(random, -14f, 12f)), RandomRange(random, 0.8f, 2.6f), Hex("FFF5CF"), 0.3f);
             GlowPatch(root, new Vector3(-1f, 0.05f, -4f), 9f, Hex("FFF8DC"), 0.35f);
@@ -544,8 +551,8 @@ namespace VN.World
             SkyBackdrop(root, 220f, 110f, Hex("E8F1FA"), Hex("8FB6E2"));
 
             // 从窗进来的光柱与地上的亮带
-            for (int i = 0; i < 6; i++)
-                Shaft(root, new Vector3(-5f + i * 2f, 2.6f, 4.5f), sun, 8f, 1.4f, Hex("FFF7E6"), 0.14f);
+            for (int i = 0; i < 4; i++)
+                Shaft(root, new Vector3(-4.5f + i * 3f, 2.6f, 4.5f), sun, 8f, 2.6f, Hex("FFF7E6"), 0.07f);
             GlowPatch(root, new Vector3(0f, 0.02f, 4.5f), 9f, Hex("FFF6E2"), 0.25f);
             Bounds(root, 9f, 7.3f);
         }
@@ -576,7 +583,7 @@ namespace VN.World
                 Part(PrimitiveType.Sphere, "FallenOrange", root, new Vector3(RandomRange(random, -9f, 9f), 0.13f, RandomRange(random, -8f, 8f)), Vector3.one * 0.26f, Hex("F0922F"));
             for (int i = 0; i < 40; i++)
                 Part(PrimitiveType.Cube, "Petal", root, new Vector3(RandomRange(random, -11f, 11f), RandomRange(random, 0.02f, 3.5f), RandomRange(random, -10f, 9f)),
-                    new Vector3(0.12f, 0.01f, 0.08f), Hex("FBFAF4"), null, new Vector3(RandomRange(random, -40f, 40f), RandomRange(random, 0f, 180f), RandomRange(random, -40f, 40f)));
+                    new Vector3(0.07f, 0.01f, 0.05f), Hex("FBFAF4"), null, new Vector3(RandomRange(random, -40f, 40f), RandomRange(random, 0f, 180f), RandomRange(random, -40f, 40f)));
 
             // 正午顶光：强光斑与穿过橘子树的光柱
             GlowPatch(root, new Vector3(0f, 0.03f, -3f), 16f, Hex("FFFCEF"), 0.5f);

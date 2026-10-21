@@ -253,12 +253,12 @@ namespace VN.World
         {
             var root = Root("GrassTuft", parent, position);
             var random = new System.Random(seed);
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 11; i++)
             {
                 float h = RandomRange(random, 0.3f, 0.75f);
                 Part(PrimitiveType.Cube, "Blade", root.transform,
                     new Vector3(RandomRange(random, -0.3f, 0.3f), h * 0.5f, RandomRange(random, -0.3f, 0.3f)),
-                    new Vector3(0.05f, h, 0.015f), i % 2 == 0 ? Sage : LeafLight, null,
+                    new Vector3(0.035f, h, 0.012f), i % 3 == 0 ? Hex("5F8A4A") : (i % 3 == 1 ? Sage : LeafLight), null,
                     new Vector3(RandomRange(random, -14f, 14f), RandomRange(random, 0f, 180f), RandomRange(random, -14f, 14f)));
             }
             var sway = root.AddComponent<StorybookMotion>();

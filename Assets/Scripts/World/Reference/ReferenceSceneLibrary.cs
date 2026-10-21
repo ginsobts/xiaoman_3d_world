@@ -180,14 +180,14 @@ namespace VN.World
             {
                 float a = i / 26f * Mathf.PI * 2f;
                 float r = 4f + (i % 5) * 2.2f;
-                seaside.props.Add(new ReferencePlacement("grass_tuft", new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r * 0.6f - 1f), i * 37f, 1f + (i % 3) * 0.2f));
+                seaside.props.Add(new ReferencePlacement("grass_tuft", new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r * 0.6f - 1f), i * 37f, 0.55f + (i % 3) * 0.1f));
             }
             list.Add(seaside);
 
             // 3. 林荫街道与自行车
             var street = new ReferenceSceneDef
             {
-                id = "street", title = "攀云·林荫街道", imageName = "StreetBicycle",
+                id = "street", title = "攀云·林荫街道", imageName = "StreetBicycle", imageUv = new Rect(0f, 0f, 0.58f, 1f),
                 origin = new Vector3(600f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -10f), spawnYaw = 0f,
                 portalInVillage = new Vector3(0f, 0f, -25f), portalYaw = 0f, lightingId = "street",
             };
@@ -207,7 +207,7 @@ namespace VN.World
             var library = new ReferenceSceneDef
             {
                 id = "library", title = "图书馆的窗", imageName = "LibraryWindow",
-                origin = new Vector3(800f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -9f), spawnYaw = 0f,
+                origin = new Vector3(800f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -4.6f), spawnYaw = 0f,
                 portalInVillage = new Vector3(8f, 0f, -25f), portalYaw = 0f, lightingId = "library",
             };
             for (int i = 0; i < 5; i++)

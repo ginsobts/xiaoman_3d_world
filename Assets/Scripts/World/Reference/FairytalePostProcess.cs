@@ -15,6 +15,7 @@ namespace VN.World
         private Material _material;
         private static readonly int ThresholdId = Shader.PropertyToID("_Threshold");
         private static readonly int BloomTexId = Shader.PropertyToID("_BloomTex");
+        private static readonly int BloomTex2Id = Shader.PropertyToID("_BloomTex2");
         private static readonly int BloomIntensityId = Shader.PropertyToID("_BloomIntensity");
         private static readonly int ExposureId = Shader.PropertyToID("_Exposure");
         private static readonly int SaturationId = Shader.PropertyToID("_Saturation");
@@ -70,9 +71,9 @@ namespace VN.World
             Graphics.Blit(bloomC, bloomD, _material, 2);
             Graphics.Blit(bloomD, bloomC, _material, 1);
             Graphics.Blit(bloomC, bloomD, _material, 2);
-            Graphics.Blit(bloomD, bloomA);
 
             _material.SetTexture(BloomTexId, bloomA);
+            _material.SetTexture(BloomTex2Id, bloomD);
             _material.SetFloat(BloomIntensityId, p.bloomIntensity);
             _material.SetFloat(ExposureId, p.exposure);
             _material.SetFloat(SaturationId, p.saturation);
