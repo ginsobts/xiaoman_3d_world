@@ -61,19 +61,93 @@ namespace VN.Editor
             director.ApplyForPosition(greenhouse.origin + greenhouse.spawnLocal);
             if (director.Current.id != "greenhouse") throw new Exception("ApplyForPosition failed: " + director.Current.id);
 
-            // 裁剪：每个 AI 候选道具都能从参考图裁出非空 PNG
-            int crops = 0;
+            // 参考图：每个 AI 候选都有设定图（人物要正反两面），没有设定图的能从原画裁出非空 PNG
+            int sheets = 0, characters = 0;
             foreach (var spec in ReferenceSceneLibrary.Props.Where(p => p.aiCandidate))
             {
-                byte[] png = AI3DImporter.CropForSpec(spec);
-                if (png == null || png.Length < 1000) throw new Exception("crop too small " + spec.id);
-                crops++;
+                var images = AI3DImporter.LoadReferenceImages(spec, null);
+                if (images.Count == 0 || images.Any(i => i == null || i.Length < 1000)) throw new Exception("reference image empty " + spec.id);
+                if (spec.isCharacter)
+                {
+                    characters++;
+                    if (images.Count < 2) throw new Exception("character needs front+back sheets " + spec.id);
+                    if (spec.animationActionIds == null || spec.animationActionIds.Length == 0) throw new Exception("character has no animation " + spec.id);
+                }
+                if (AI3DImporter.HasReferenceSheet(spec)) sheets++;
             }
+            if (characters != 6) throw new Exception("character count " + characters);
 
-            Debug.Log($"[Xiaoman Reference] smoke test passed: portals={portals} zones={zones} props={markers} gulls={gulls} shafts={shafts} crops={crops}");
+            // 泼溅插件、GLB 读取、Marble 分支
+            CheckMarbleStack(level);
+
+            Debug.Log($"[Xiaoman Reference] smoke test passed: portals={portals} zones={zones} props={markers} gulls={gulls} shafts={shafts} sheets={sheets} characters={characters} gfx={SystemInfo.graphicsDeviceType} splats={MarbleWorldMarker.RendererSupported}");
             if (Environment.GetEnvironmentVariable("XIAOMAN_REF_SHOTS") is string shotDir && !string.IsNullOrEmpty(shotDir))
                 CaptureAll(director, shotDir);
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        }
+
+        /// <summary>检查高斯泼溅插件与 Marble 导入链路（不联网）：包内 shader、GLB 解析、有世界 prefab 时的场景搭建分支。</summary>
+        private static void CheckMarbleStack(WorldLevel level)
+        {
+            const string pkg = "Packages/org.nesnausk.gaussian-splatting/Shaders/";
+            if (AssetDatabase.LoadAssetAtPath<Shader>(pkg + "RenderGaussianSplats.shader") == null) throw new Exception("gaussian splatting shader missing");
+            if (AssetDatabase.LoadAssetAtPath<ComputeShader>(pkg + "SplatUtilities.compute") == null) throw new Exception("gaussian splatting compute missing");
+            if (typeof(GaussianSplatting.Runtime.GaussianSplatRenderer) == null) throw new Exception("renderer type missing");
+
+            // GLB 往返：一个立方体写成 GLB 再读回
+            var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var cubeMesh = cube.GetComponent<MeshFilter>().sharedMesh;
+            byte[] glb = MiniGlb.Write(cubeMesh);
+            var back = MiniGlb.LoadMesh(glb, "roundtrip");
+            if (back.vertexCount != cubeMesh.vertexCount || back.triangles.Length != cubeMesh.triangles.Length)
+                throw new Exception($"glb roundtrip mismatch v={back.vertexCount} t={back.triangles.Length}");
+            UnityEngine.Object.DestroyImmediate(cube);
+            UnityEngine.Object.DestroyImmediate(back);
+
+            // Marble 分支：临时放一个 World_library prefab，重建画廊后图书馆应改用它并只保留 keep 列表里的道具
+            if (!MarbleWorldMarker.RendererSupported)
+            {
+                Debug.LogWarning("[Xiaoman Reference] splat renderer not supported on " + SystemInfo.graphicsDeviceType + ", Marble branch not exercised");
+                return;
+            }
+            string prefabPath = MarbleImporter.PrefabPath("library");
+            if (System.IO.File.Exists(prefabPath)) { Debug.Log("[Xiaoman Reference] real Marble world present for library, skipping fake"); return; }
+            var fake = new GameObject("World_library");
+            var marker = fake.AddComponent<MarbleWorldMarker>();
+            marker.sceneId = "library";
+            marker.spawnLocal = new Vector3(0f, 0f, 0.5f);
+            System.IO.Directory.CreateDirectory(AI3DImporter.PrefabFolder);
+            PrefabUtility.SaveAsPrefabAsset(fake, prefabPath);
+            UnityEngine.Object.DestroyImmediate(fake);
+            AssetDatabase.Refresh();
+            try
+            {
+                if (!AIAssetLibrary.HasWorld("library")) throw new Exception("HasWorld(library) false after creating prefab");
+                var old = level.transform.Find(ReferenceSceneLibrary.GalleryRootName);
+                UnityEngine.Object.DestroyImmediate(old.gameObject);
+                UnityEngine.Object.DestroyImmediate(level.transform.Find(ReferenceSceneLibrary.PortalRowName).gameObject);
+                var galleries = ReferenceSceneBuilder.Build(level);
+                var lib = galleries.transform.Find("Gallery_library");
+                if (lib.Find("MarbleWorld_library") == null) throw new Exception("Marble world not instantiated");
+                int libProps = lib.GetComponentsInChildren<GeneratedPropMarker>().Length;
+                if (libProps != 0) throw new Exception("library should keep no props in Marble mode, got " + libProps);
+                var greenhouse = galleries.transform.Find("Gallery_greenhouse");
+                if (greenhouse.GetComponentsInChildren<GeneratedPropMarker>().Length < 10) throw new Exception("non-Marble scene lost its props");
+                var spawn = lib.Find("Spawn");
+                if (spawn == null || (spawn.localPosition - new Vector3(0f, 0f, 0.5f)).sqrMagnitude > 1e-4f) throw new Exception("Marble spawn not applied");
+                Debug.Log("[Xiaoman Reference] Marble branch ok (fake world)");
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(prefabPath);
+                AssetDatabase.Refresh();
+                // 恢复成普通画廊，后面的截图用
+                var g = level.transform.Find(ReferenceSceneLibrary.GalleryRootName);
+                if (g != null) UnityEngine.Object.DestroyImmediate(g.gameObject);
+                var p = level.transform.Find(ReferenceSceneLibrary.PortalRowName);
+                if (p != null) UnityEngine.Object.DestroyImmediate(p.gameObject);
+                ReferenceSceneBuilder.Build(level);
+            }
         }
 
         /// <summary>把每个参考场景从出生点视角渲染成 PNG（含后期），用于离线检查效果。</summary>

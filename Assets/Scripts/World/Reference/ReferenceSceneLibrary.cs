@@ -15,11 +15,24 @@ namespace VN.World
         public Rect crop;
         public float targetHeight = 1f;   // 导入后把模型等比缩放到这个高度（米）
         public bool aiCandidate = true;
+        /// <summary>人形角色：生成时用 A-pose，完成后自动绑骨并套用 animationActionIds 里的预设动画。</summary>
+        public bool isCharacter;
+        /// <summary>Meshy 动画库 action_id（0=Idle, 11/12=Idle 变体, 32/33=坐姿 Idle, 56=站着聊天, 30=散步）。</summary>
+        public int[] animationActionIds = System.Array.Empty<int>();
 
         public ReferencePropSpec(string id, string sceneId, string displayName, string prompt, Rect crop, float targetHeight, bool ai = true)
         {
             this.id = id; this.sceneId = sceneId; this.displayName = displayName; this.prompt = prompt;
             this.crop = crop; this.targetHeight = targetHeight; aiCandidate = ai;
+        }
+
+        public static ReferencePropSpec Character(string id, string sceneId, string displayName, string prompt, float height, params int[] actions)
+        {
+            return new ReferencePropSpec(id, sceneId, displayName, prompt, Rect.zero, height, true)
+            {
+                isCharacter = true,
+                animationActionIds = actions != null && actions.Length > 0 ? actions : new[] { 0 },
+            };
         }
     }
 
@@ -52,6 +65,10 @@ namespace VN.World
         public float portalYaw;
         public string lightingId;
         public List<ReferencePlacement> props = new List<ReferencePlacement>();
+        /// <summary>World Labs Marble 生成整幅环境时附带的文字提示。</summary>
+        public string marblePrompt;
+        /// <summary>有 Marble 环境时仍然单独摆放的道具（通常是会动的角色 / 可交互物）。</summary>
+        public List<string> marbleKeepProps = new List<string>();
 
         public LightingPreset Lighting => ReferenceSceneLibrary.PresetById(lightingId);
     }
@@ -96,6 +113,7 @@ namespace VN.World
         private static List<ReferencePropSpec> BuildProps()
         {
             const string style = " Soft hand-drawn storybook illustration style, colored pencil and crayon texture, gentle pastel colors, clean silhouette, single object, no background.";
+            const string charStyle = " Gentle pastel colors, clean readable face, detailed clothing folds, no background.";
             return new List<ReferencePropSpec>
             {
                 // 温室钢琴
@@ -121,20 +139,21 @@ namespace VN.World
                 new ReferencePropSpec("cat", "orange", "小猫", "A small cream and orange cat sitting upright, looking up." + style, new Rect(0.53f, 0.78f, 0.10f, 0.16f), 0.55f),
                 new ReferencePropSpec("yellow_door", "orange", "黄色木门", "A bright yellow wooden door in a plain concrete frame." + style, new Rect(0.25f, 0.36f, 0.11f, 0.28f), 2.3f),
                 new ReferencePropSpec("red_crate", "orange", "红色小箱", "A small red plastic crate." + style, new Rect(0.17f, 0.58f, 0.07f, 0.09f), 0.36f),
-                // 仅程序化（人物 / 树木 / 建筑交给手绘低模，AI 单图重建效果不稳定）
-                new ReferencePropSpec("suit_man", "greenhouse", "白西装男子", "", Rect.zero, 1.8f, false),
-                new ReferencePropSpec("piano_girl", "greenhouse", "弹琴的少女", "", Rect.zero, 1.6f, false),
-                new ReferencePropSpec("hooded_figure", "seaside", "连帽衫的人", "", Rect.zero, 1.8f, false),
-                new ReferencePropSpec("rabbit_girl", "seaside", "兔耳少女", "", Rect.zero, 1.7f, false),
+                // 人物：用 Assets/Art/AI3D/Refs/<id>_front/back 的正反面设定图多视角重建，A-pose → 自动绑骨 → 预设动画
+                ReferencePropSpec.Character("suit_man", "greenhouse", "白西装男子", "A young man in a cream linen suit with short dark brown hair and brown leather shoes, soft anime style, clean fabric." + charStyle, 1.8f, 56),
+                ReferencePropSpec.Character("piano_girl", "greenhouse", "弹琴的少女", "A girl with long light brown wavy hair in a long cream white dress with a sash, soft anime style." + charStyle, 1.6f, 32),
+                ReferencePropSpec.Character("hooded_figure", "seaside", "连帽衫的人", "A person in a grey hooded jacket with the hood up, dark green long skirt, brown shoulder bag, dark boots, soft anime style." + charStyle, 1.8f, 0),
+                ReferencePropSpec.Character("rabbit_girl", "seaside", "兔耳少女", "A girl with long pale blonde hair and tall white rabbit ears, grey-blue jacket, dark green pleated skirt, yellow tights, green sneakers, soft anime style." + charStyle, 1.7f, 11),
+                ReferencePropSpec.Character("street_girl", "street", "推车的少女", "A cheerful schoolgirl with long brown hair, white sailor blouse with navy collar, navy pleated skirt, white socks, brown loafers, soft anime style." + charStyle, 1.7f, 12),
+                ReferencePropSpec.Character("courtyard_girl", "orange", "院子里的少女", "A young woman with auburn hair in a low bun, white long-sleeve blouse, long deep teal-blue skirt, dark flat shoes, soft anime style." + charStyle, 1.7f, 56),
+                // 仅程序化（树木 / 建筑 / 海鸥等大体量或大量重复的元素交给手绘低模或 Marble 环境）
                 new ReferencePropSpec("seagull", "seaside", "海鸥", "", Rect.zero, 0.3f, false),
                 new ReferencePropSpec("grass_tuft", "seaside", "草丛", "", Rect.zero, 0.6f, false),
                 new ReferencePropSpec("street_tree", "street", "大树", "", Rect.zero, 10f, false),
                 new ReferencePropSpec("small_house", "street", "树荫下的房子", "", Rect.zero, 3.6f, false),
-                new ReferencePropSpec("street_girl", "street", "推车的少女", "", Rect.zero, 1.7f, false),
                 new ReferencePropSpec("ottoman", "library", "脚凳", "", Rect.zero, 0.5f, false),
                 new ReferencePropSpec("side_cabinet", "library", "边柜", "", Rect.zero, 0.9f, false),
                 new ReferencePropSpec("orange_tree", "orange", "橘子树", "", Rect.zero, 8f, false),
-                new ReferencePropSpec("courtyard_girl", "orange", "院子里的少女", "", Rect.zero, 1.7f, false),
             };
         }
 
@@ -148,6 +167,8 @@ namespace VN.World
                 id = "greenhouse", title = "温室里的钢琴", imageName = "GreenhousePiano",
                 origin = new Vector3(200f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -7.5f), spawnYaw = 0f,
                 portalInVillage = new Vector3(-16f, 0f, -25f), portalYaw = 0f, lightingId = "greenhouse",
+                marblePrompt = "A sunlit glass greenhouse interior with an old black upright piano, blue hydrangea bushes, trailing vines and warm light shafts through the glass roof. Soft storybook illustration style, colored pencil texture, pastel colors, no people.",
+                marbleKeepProps = { "piano_girl", "suit_man" },
             };
             greenhouse.props.AddRange(new[]
             {
@@ -170,6 +191,8 @@ namespace VN.World
                 id = "seaside", title = "海边与海鸥", imageName = "Seaside", imageUv = new Rect(0f, 0f, 1f, 0.5f),
                 origin = new Vector3(400f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -9f), spawnYaw = 0f,
                 portalInVillage = new Vector3(-8f, 0f, -25f), portalYaw = 0f, lightingId = "seaside",
+                marblePrompt = "A bright grassy hill above a calm blue sea with white seagulls flying under a soft pale sky, wide open view, gentle breeze. Soft storybook illustration style, colored pencil texture, pastel colors, no people.",
+                marbleKeepProps = { "hooded_figure", "rabbit_girl" },
             };
             seaside.props.AddRange(new[]
             {
@@ -190,6 +213,8 @@ namespace VN.World
                 id = "street", title = "攀云·林荫街道", imageName = "StreetBicycle", imageUv = new Rect(0f, 0f, 0.58f, 1f),
                 origin = new Vector3(600f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -10f), spawnYaw = 0f,
                 portalInVillage = new Vector3(0f, 0f, -25f), portalYaw = 0f, lightingId = "street",
+                marblePrompt = "A quiet tree-shaded street with huge leafy trees, dappled sunlight on the pavement, a small house behind the trees, a red children's slide and a parked bicycle with a basket. Soft storybook illustration style, colored pencil texture, pastel greens, no people.",
+                marbleKeepProps = { "street_girl" },
             };
             street.props.AddRange(new[]
             {
@@ -209,6 +234,7 @@ namespace VN.World
                 id = "library", title = "图书馆的窗", imageName = "LibraryWindow",
                 origin = new Vector3(800f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -4.6f), spawnYaw = 0f,
                 portalInVillage = new Vector3(8f, 0f, -25f), portalYaw = 0f, lightingId = "library",
+                marblePrompt = "A cozy old library reading room with tall dark wooden bookshelves full of colorful books, long reading tables, cream plaid armchairs, brass table lamps, a small white marble statue, and a huge window opening onto a sunny green meadow under a blue sky. Soft storybook illustration style, colored pencil texture, warm pastel colors, no people.",
             };
             for (int i = 0; i < 5; i++)
             {
@@ -258,6 +284,8 @@ namespace VN.World
                 id = "orange", title = "橘子树的院子", imageName = "OrangeCourtyard",
                 origin = new Vector3(1000f, 0f, 0f), spawnLocal = new Vector3(0f, 0f, -9f), spawnYaw = 0f,
                 portalInVillage = new Vector3(16f, 0f, -25f), portalYaw = 0f, lightingId = "orange",
+                marblePrompt = "A sunny small courtyard with big orange trees full of fruit, a bright yellow wooden door in a plain wall, a red plastic crate, a yellow vintage bicycle, warm light and soft shadows on the ground. Soft storybook illustration style, colored pencil texture, pastel colors, no people, no cat.",
+                marbleKeepProps = { "courtyard_girl", "cat" },
             };
             orange.props.AddRange(new[]
             {

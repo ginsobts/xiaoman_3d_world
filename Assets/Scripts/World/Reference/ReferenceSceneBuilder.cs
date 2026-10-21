@@ -42,9 +42,10 @@ namespace VN.World
             Box("GalleryDeck", portals.transform, new Vector3(0f, 0.08f, -25.5f), new Vector3(40f, 0.16f, 4f), Wood, "WoodPlanks", true);
             foreach (var scene in ReferenceSceneLibrary.Scenes)
             {
+                Vector3 spawnLocal = SpawnLocal(scene, out float spawnYaw);
                 var easel = Easel(portals.transform, scene.portalInVillage + Vector3.up * 0.16f, 180f + scene.portalYaw,
                     scene.imageName, scene.imageUv, scene.title,
-                    scene.origin + scene.spawnLocal, scene.spawnYaw, scene.lightingId);
+                    scene.origin + spawnLocal, spawnYaw, scene.lightingId);
                 easel.name = "Portal_" + scene.id;
                 BuildLantern(portals.transform, scene.portalInVillage + new Vector3(3.2f, 0.16f, -0.6f));
             }
@@ -52,18 +53,37 @@ namespace VN.World
             foreach (var scene in ReferenceSceneLibrary.Scenes)
             {
                 var sceneRoot = Root("Gallery_" + scene.id, galleries.transform, scene.origin);
-                switch (scene.id)
+                // 有 Marble 泼溅环境时整幅画作本身就是环境；只保留会动的角色和可交互物
+                bool marble = AIAssetLibrary.HasWorld(scene.id);
+                if (marble)
                 {
-                    case "greenhouse": BuildGreenhouse(sceneRoot.transform); break;
-                    case "seaside": BuildSeaside(sceneRoot.transform); break;
-                    case "street": BuildStreet(sceneRoot.transform); break;
-                    case "library": BuildLibrary(sceneRoot.transform); break;
-                    case "orange": BuildOrangeCourtyard(sceneRoot.transform); break;
+                    AIAssetLibrary.InstantiateWorld(scene.id, sceneRoot.transform);
+                    var safety = Root("SafetyFloor", sceneRoot.transform, new Vector3(0f, -1.1f, 0f));
+                    safety.AddComponent<BoxCollider>().size = new Vector3(120f, 0.2f, 120f);
+                    Bounds(sceneRoot.transform, 28f, 28f, 12f);
+                }
+                else
+                {
+                    switch (scene.id)
+                    {
+                        case "greenhouse": BuildGreenhouse(sceneRoot.transform); break;
+                        case "seaside": BuildSeaside(sceneRoot.transform); break;
+                        case "street": BuildStreet(sceneRoot.transform); break;
+                        case "library": BuildLibrary(sceneRoot.transform); break;
+                        case "orange": BuildOrangeCourtyard(sceneRoot.transform); break;
+                    }
                 }
 
                 var propsRoot = Root("Props", sceneRoot.transform, Vector3.zero);
                 foreach (var placement in scene.props)
                 {
+                    if (marble && !scene.marbleKeepProps.Contains(placement.propId))
+                    {
+                        // 钢琴已经画在泼溅环境里，只放一个看不见的演奏点让它仍然能弹
+                        if (placement.propId == "upright_piano")
+                            MakePianoPlayable(Root("PianoSpot", propsRoot.transform, placement.position));
+                        continue;
+                    }
                     var go = AIAssetLibrary.Instantiate(placement.propId, propsRoot.transform, placement.position, placement.yaw, placement.scale);
                     if (placement.propId == "upright_piano") MakePianoPlayable(go);
                 }
@@ -78,14 +98,27 @@ namespace VN.World
                 zone.Preset = scene.Lighting;
 
                 // 出生点标记 + 回村画框
-                var spawn = Root("Spawn", sceneRoot.transform, scene.spawnLocal);
-                spawn.transform.localRotation = Quaternion.Euler(0f, scene.spawnYaw, 0f);
-                var back = Easel(sceneRoot.transform, scene.spawnLocal + Quaternion.Euler(0f, scene.spawnYaw, 0f) * new Vector3(0f, 0f, -3.2f),
-                    scene.spawnYaw + 180f, "UI/SkyPanorama", new Rect(0.3f, 0.2f, 0.4f, 0.6f),
+                Vector3 spawnLocal = SpawnLocal(scene, out float spawnYaw);
+                var spawn = Root("Spawn", sceneRoot.transform, spawnLocal);
+                spawn.transform.localRotation = Quaternion.Euler(0f, spawnYaw, 0f);
+                var back = Easel(sceneRoot.transform, spawnLocal + Quaternion.Euler(0f, spawnYaw, 0f) * new Vector3(0f, 0f, -3.2f),
+                    spawnYaw + 180f, "UI/SkyPanorama", new Rect(0.3f, 0.2f, 0.4f, 0.6f),
                     GameLanguage.IsEnglish ? "Back to the village" : "回到村庄", villageSpawn, 0f, "village");
                 back.name = "Portal_Back";
             }
             return galleries;
+        }
+
+        /// <summary>到达点：有 Marble 环境时用世界 prefab 上记录的位置（默认原点），否则用场景定义。</summary>
+        public static Vector3 SpawnLocal(ReferenceSceneDef scene, out float yaw)
+        {
+            if (AIAssetLibrary.HasWorld(scene.id))
+            {
+                var marker = AIAssetLibrary.WorldMarker(scene.id);
+                if (marker != null) { yaw = marker.spawnYaw; return marker.spawnLocal; }
+            }
+            yaw = scene.spawnYaw;
+            return scene.spawnLocal;
         }
 
         // ---------------- 公共部件 ----------------

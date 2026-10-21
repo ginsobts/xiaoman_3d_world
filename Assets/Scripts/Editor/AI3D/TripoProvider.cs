@@ -18,20 +18,29 @@ namespace VN.EditorTools.AI3D
 
         public string Name => "Tripo v3.1";
         public string KeyPrefName => Pref;
+        public bool SupportsRigging => false;
 
         // 任务 id 格式："gen:<id>" 表示生成阶段，"conv:<id>" 表示 FBX 转换阶段
         private readonly Dictionary<string, string> _baseColorByTask = new Dictionary<string, string>();
 
         public TripoProvider(string apiKey) : base(apiKey) { }
 
-        public async Task<string> CreateTask(byte[] png, ReferencePropSpec spec, Action<string> log)
+        public Task<string> CreateRigTask(string modelTaskId, ReferencePropSpec spec, Action<string> log) => throw new NotSupportedException("Tripo 备用通道不做自动绑骨，请用 Meshy 生成人物。");
+        public Task<ProviderTaskResult> PollRig(string rigTaskId, Action<string> log) => throw new NotSupportedException();
+        public Task<string> CreateAnimationTask(string rigTaskId, int[] actionIds, Action<string> log) => throw new NotSupportedException();
+        public Task<ProviderTaskResult> PollAnimation(string animTaskId, Action<string> log) => throw new NotSupportedException();
+
+        public async Task<string> CreateTask(IList<byte[]> images, ReferencePropSpec spec, Action<string> log)
         {
-            // 1. 上传图片
+            if (images == null || images.Count == 0) throw new Exception("没有可用的参考图");
+            byte[] png = images[0];
+            bool isJpeg = png.Length > 3 && png[0] == 0xFF && png[1] == 0xD8;
+            // 1. 上传图片（Tripo 只取正面主视图）
             var upload = Request(HttpMethod.Post, Base + "/files");
             var form = new MultipartFormDataContent();
             var file = new ByteArrayContent(png);
-            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
-            form.Add(file, "file", spec.id + ".png");
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(isJpeg ? "image/jpeg" : "image/png");
+            form.Add(file, "file", spec.id + (isJpeg ? ".jpg" : ".png"));
             upload.Content = form;
             var (ok, code, resp) = await Send(upload);
             if (!ok) throw new Exception($"Tripo 上传失败 HTTP {code}: {resp}");
@@ -43,11 +52,11 @@ namespace VN.EditorTools.AI3D
             var body = new Dictionary<string, object>
             {
                 { "model", Model },
-                { "input", new Dictionary<string, object> { { "type", "png" }, { "file_token", token } } },
+                { "input", new Dictionary<string, object> { { "type", isJpeg ? "jpg" : "png" }, { "file_token", token } } },
                 { "texture", true },
                 { "pbr", true },
                 { "texture_quality", "detailed" },
-                { "face_limit", 30000 },
+                { "face_limit", 150000 },
             };
             var (ok2, code2, resp2) = await Send(Request(HttpMethod.Post, Base + "/generation/image-to-model", body));
             if (!ok2) throw new Exception($"Tripo 创建任务失败 HTTP {code2}: {resp2}");
@@ -91,7 +100,7 @@ namespace VN.EditorTools.AI3D
                 // 生成完成：记录 GLB 与贴图，再发起 FBX 转换
                 string glb = MiniJson.GetString(json, "data.output.pbr_model") ?? MiniJson.GetString(json, "data.output.model");
                 string baseColor = MiniJson.GetString(json, "data.output.base_color") ?? MiniJson.GetString(json, "data.output.rendered_image");
-                var body = new Dictionary<string, object> { { "input", rawId }, { "format", "FBX" }, { "quad", false }, { "face_limit", 30000 } };
+                var body = new Dictionary<string, object> { { "input", rawId }, { "format", "FBX" }, { "quad", false }, { "face_limit", 150000 } };
                 var (ok2, code2, resp2) = await Send(Request(HttpMethod.Post, Base + "/models/convert", body));
                 if (!ok2)
                 {

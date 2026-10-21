@@ -69,3 +69,7 @@ __pycache__/
 /Assets/Art/AI3D/Crops/
 /Assets/Art/AI3D/Crops.meta
 
+
+# Marble 原始下载（SPZ/GLB 很大，转换后的资源在 Assets/Resources/AI3D/Marble）
+/Assets/Art/AI3D/Marble/
+/Assets/Art/AI3D/Marble.meta
