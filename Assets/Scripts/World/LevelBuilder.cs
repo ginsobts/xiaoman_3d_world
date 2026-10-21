@@ -19,12 +19,10 @@ namespace VN.World
 
             if (_baseMaterial == null)
             {
-                _baseMaterial = Resources.Load<Material>("World/WorldBase");
-                if (_baseMaterial == null)
-                {
-                    var shader = Shader.Find("Standard") ?? Shader.Find("Legacy Shaders/Diffuse");
-                    _baseMaterial = new Material(shader);
-                }
+                var shader = Shader.Find("Xiaoman/Fairytale Pencil")
+                    ?? Shader.Find("Standard")
+                    ?? Shader.Find("Legacy Shaders/Diffuse");
+                _baseMaterial = new Material(shader);
             }
 
             string matName = "World_" + ColorUtility.ToHtmlStringRGB(color);
@@ -77,19 +75,13 @@ namespace VN.World
 
         public static GameObject Tree(Transform parent, Vector3 footPosition, float height = 3.5f)
         {
-            var root = new GameObject("Tree");
-            root.transform.SetParent(parent, false);
-            root.transform.localPosition = footPosition;
-            Primitive(PrimitiveType.Cylinder, "Trunk", root.transform,
-                Vector3.up * height * 0.5f, new Vector3(0.4f, height * 0.5f, 0.4f), new Color(0.45f, 0.3f, 0.18f));
-            Primitive(PrimitiveType.Sphere, "Canopy", root.transform,
-                Vector3.up * (height + 0.6f), Vector3.one * 2.6f, new Color(0.3f, 0.6f, 0.32f));
-            return root;
+            int seed = Mathf.RoundToInt(footPosition.x * 37f + footPosition.z * 71f + height * 13f);
+            return FairytaleArt.BuildTree(parent, footPosition, height, seed);
         }
 
         // ---------------- 玩家 ----------------
 
-        /// <summary>创建玩家：CharacterController + 占位胶囊 + 朝向指示。</summary>
+        /// <summary>创建玩家：CharacterController + 彩铅童话探险者模型。</summary>
         public static GameObject BuildPlayer(Vector3 position, float yaw)
         {
             var go = new GameObject("Player");
@@ -104,21 +96,7 @@ namespace VN.World
             cc.slopeLimit = 50f;
             cc.stepOffset = 0.4f;
 
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.name = "Body";
-            body.transform.SetParent(go.transform, false);
-            body.transform.localPosition = new Vector3(0f, 0.9f, 0f);
-            body.transform.localScale = new Vector3(0.7f, 0.9f, 0.7f);
-            body.GetComponent<Renderer>().sharedMaterial = Mat(new Color(0.35f, 0.55f, 0.9f));
-            Object.Destroy(body.GetComponent<Collider>());       // 碰撞交给 CharacterController
-
-            var nose = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            nose.name = "Facing";
-            nose.transform.SetParent(go.transform, false);
-            nose.transform.localPosition = new Vector3(0f, 1.45f, 0.38f);
-            nose.transform.localScale = new Vector3(0.22f, 0.22f, 0.22f);
-            nose.GetComponent<Renderer>().sharedMaterial = Mat(new Color(0.95f, 0.95f, 1f));
-            Object.Destroy(nose.GetComponent<Collider>());
+            FairytaleArt.BuildExplorer(go.transform);
 
             go.AddComponent<PlayerController>();
             go.AddComponent<InteractionDetector>();
@@ -147,10 +125,23 @@ namespace VN.World
                 light.color = new Color(1f, 0.96f, 0.88f);
                 light.shadows = LightShadows.Soft;
             }
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.72f, 0.82f, 0.95f);
+            RenderSettings.ambientEquatorColor = new Color(0.86f, 0.82f, 0.72f);
+            RenderSettings.ambientGroundColor = new Color(0.42f, 0.5f, 0.38f);
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.Linear;
+            RenderSettings.fogColor = new Color(0.77f, 0.84f, 0.88f);
+            RenderSettings.fogStartDistance = 42f;
+            RenderSettings.fogEndDistance = 78f;
+            FairytaleArt.BuildBackdrop(root);
 
             // 地面 60x60
             var ground = Primitive(PrimitiveType.Plane, "Ground", root,
                 Vector3.zero, new Vector3(6f, 1f, 6f), new Color(0.56f, 0.66f, 0.5f));
+            ground.GetComponent<Renderer>().sharedMaterial =
+                FairytaleArt.Material("GrassGround", Color.white, "Grass");
+            ground.GetComponent<Renderer>().sharedMaterial.mainTextureScale = new Vector2(12f, 12f);
             ground.isStatic = true;
 
             // 外围围墙
@@ -159,6 +150,18 @@ namespace VN.World
             Box("Wall_S", root, new Vector3(0f, 0f, -30f), new Vector3(60f, 3f, 1f), wallColor);
             Box("Wall_E", root, new Vector3(30f, 0f, 0f), new Vector3(1f, 3f, 60f), wallColor);
             Box("Wall_W", root, new Vector3(-30f, 0f, 0f), new Vector3(1f, 3f, 60f), wallColor);
+
+            // 蜿蜒的绘本道路（几段略微旋转的扁平方块）
+            for (int i = 0; i < 9; i++)
+            {
+                float z = -24f + i * 6f;
+                float x = Mathf.Sin(i * 0.72f) * 2.2f;
+                var path = Box("CrayonPath", root, new Vector3(x, 0.025f, z),
+                    new Vector3(5.2f, 0.04f, 7.1f), Color.white);
+                path.transform.localRotation = Quaternion.Euler(0, Mathf.Cos(i * 0.72f) * 12f, 0);
+                path.GetComponent<Renderer>().sharedMaterial =
+                    FairytaleArt.Material("DirtPath", Color.white, "Dirt");
+            }
 
             // 出生点
             var spawn = new GameObject("SpawnPoint");
@@ -188,22 +191,46 @@ namespace VN.World
                      })
                 Tree(root, p);
 
+            // 远景童话建筑与小品：让白盒第一眼就有完整的世界气氛。
+            FairytaleArt.BuildCottage(root, new Vector3(-20f, 0f, 15f), 18f);
+            FairytaleArt.BuildCottage(root, new Vector3(20f, 0f, 13f), -22f);
+            FairytaleArt.BuildWell(root, new Vector3(-7f, 0f, 7f));
+            FairytaleArt.BuildBench(root, new Vector3(8f, 0f, -5f), -25f);
+            FairytaleArt.BuildFence(root, new Vector3(-19f, 0f, 8f), 7, 10f);
+            FairytaleArt.BuildFence(root, new Vector3(19f, 0f, 6f), 6, -12f);
+            FairytaleArt.BuildLantern(root, new Vector3(-3f, 0f, -10f));
+            FairytaleArt.BuildLantern(root, new Vector3(5f, 0f, 10f));
+            for (int i = 0; i < 9; i++)
+            {
+                float a = i / 9f * Mathf.PI * 2f;
+                FairytaleArt.BuildFlowers(root,
+                    new Vector3(Mathf.Cos(a) * (11f + i % 3), 0f, Mathf.Sin(a) * (10f + i % 2)), 100 + i);
+            }
+            FairytaleArt.BuildMushrooms(root, new Vector3(-12f, 0f, -7f), 41);
+            FairytaleArt.BuildMushrooms(root, new Vector3(11f, 0f, 4f), 89);
+
             // 跳台
             Color boxColor = new Color(0.8f, 0.62f, 0.45f);
             Box("Crate_A", root, new Vector3(-6f, 0f, -14f), new Vector3(2f, 0.6f, 2f), boxColor);
             Box("Crate_B", root, new Vector3(-8f, 0f, -14f), new Vector3(2f, 1.2f, 2f), boxColor);
             Box("Crate_C", root, new Vector3(-10f, 0f, -14f), new Vector3(2f, 1.8f, 2f), boxColor);
 
-            // NPC：小满
-            var npc = Primitive(PrimitiveType.Capsule, "NPC_Xiaoman", root,
-                new Vector3(4f, 1f, 2f), new Vector3(0.8f, 1f, 0.8f), new Color(0.95f, 0.62f, 0.72f));
+            // NPC：小满（独立碰撞根 + 手绘低模外观）
+            var npc = new GameObject("NPC_Xiaoman");
+            npc.transform.SetParent(root, false);
+            npc.transform.localPosition = new Vector3(4f, 0f, 2f);
             npc.transform.localRotation = Quaternion.Euler(0f, 200f, 0f);
+            var npcCollider = npc.AddComponent<CapsuleCollider>();
+            npcCollider.height = 2f;
+            npcCollider.radius = 0.42f;
+            npcCollider.center = new Vector3(0f, 1f, 0f);
+            FairytaleArt.BuildXiaoman(npc.transform);
             var npcTalk = npc.AddComponent<DialogueInteractable>();
             npcTalk.displayName = GameLanguage.IsEnglish ? "Xiaoman" : "小满";
             npcTalk.storyFile = story;
             npcTalk.startNode = "xiaoman_meet";
             npcTalk.isCharacter = true;
-            WorldLabel.Attach(npc, npcTalk.displayName, 1.6f);
+            WorldLabel.Attach(npc, npcTalk.displayName, 2.25f);
 
             // 木牌
             var signRoot = new GameObject("Sign");
@@ -223,14 +250,18 @@ namespace VN.World
             for (int i = 0; i < 6; i++)
             {
                 float a = i * 60f * Mathf.Deg2Rad;
-                Primitive(PrimitiveType.Cylinder, "Grass", root,
-                    new Vector3(14f + Mathf.Cos(a) * 1.6f, 0.25f, -14f + Mathf.Sin(a) * 1.6f),
-                    new Vector3(1.1f, 0.25f, 1.1f), grass).isStatic = true;
+                var bush = Primitive(PrimitiveType.Sphere, "CrayonBush", root,
+                    new Vector3(14f + Mathf.Cos(a) * 1.6f, 0.45f, -14f + Mathf.Sin(a) * 1.6f),
+                    new Vector3(1.3f, 0.7f, 1.1f), grass);
+                bush.GetComponent<Renderer>().sharedMaterial =
+                    FairytaleArt.Material("BushLeaves", FairytaleArt.LeafLight, "Leaves");
+                bush.isStatic = true;
             }
-            var key = Primitive(PrimitiveType.Cube, "Pickup_Key", root,
-                new Vector3(14f, 0.7f, -14f), new Vector3(0.35f, 0.35f, 0.35f), new Color(1f, 0.85f, 0.2f));
-            key.transform.localRotation = Quaternion.Euler(35f, 0f, 45f);
-            key.GetComponent<Collider>().isTrigger = true;
+            var key = FairytaleArt.BuildKey(root, new Vector3(14f, 0.9f, -14f));
+            key.name = "Pickup_Key";
+            var keyCollider = key.AddComponent<SphereCollider>();
+            keyCollider.radius = 0.65f;
+            keyCollider.isTrigger = true;
             var pickup = key.AddComponent<PickupInteractable>();
             pickup.itemId = "key";
             pickup.displayName = GameLanguage.IsEnglish ? "Key" : "钥匙";
@@ -245,6 +276,8 @@ namespace VN.World
             hinge.transform.SetParent(root, false);
             hinge.transform.localPosition = new Vector3(-1f, 0f, 14f);       // 铰链在门的左侧
             var panel = Box("Panel", hinge.transform, new Vector3(1f, 0f, 0f), new Vector3(2f, 2.6f, 0.25f), new Color(0.4f, 0.26f, 0.16f));
+            panel.GetComponent<Renderer>().sharedMaterial =
+                FairytaleArt.Material("StoryDoor", Color.white, "WoodPlanks");
             Primitive(PrimitiveType.Sphere, "Knob", panel.transform,
                 new Vector3(0.38f, 0f, -0.6f), new Vector3(0.1f, 0.08f, 0.6f), new Color(0.9f, 0.8f, 0.3f));
             var door = hinge.AddComponent<DoorInteractable>();
@@ -263,8 +296,10 @@ namespace VN.World
             Box("RoomWall_W", root, new Vector3(-6f, 0f, 20f), new Vector3(0.6f, 3.2f, 12f), innerWall);
             Box("RoomWall_N", root, new Vector3(0f, 0f, 26f), new Vector3(12.6f, 3.2f, 0.6f), innerWall);
 
-            var crystal = Primitive(PrimitiveType.Sphere, "Crystal", root,
-                new Vector3(0f, 1.2f, 21f), Vector3.one * 0.9f, new Color(0.5f, 0.9f, 1f));
+            var crystal = FairytaleArt.BuildCrystal(root, new Vector3(0f, 0.55f, 21f));
+            crystal.name = "Crystal";
+            var crystalCollider = crystal.AddComponent<SphereCollider>();
+            crystalCollider.radius = 1.25f;
             Primitive(PrimitiveType.Cylinder, "Pedestal", root,
                 new Vector3(0f, 0.35f, 21f), new Vector3(1f, 0.35f, 1f), new Color(0.3f, 0.3f, 0.36f));
             var crystalTalk = crystal.AddComponent<DialogueInteractable>();

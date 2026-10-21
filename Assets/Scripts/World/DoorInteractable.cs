@@ -66,6 +66,7 @@ namespace VN.World
 
             world.Hud.Toast(GameLanguage.DoorOpened);
             WorldState.SetFlag(OpenedVariable);
+            FairytaleVFX.Spawn("DoorSpiral", transform.position + Vector3.up * 1.35f, 3f, 1.4f);
             Open(instant: false);
         }
 

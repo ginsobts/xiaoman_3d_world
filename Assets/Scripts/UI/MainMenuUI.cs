@@ -11,6 +11,22 @@ namespace VN
         {
             var bg = UITheme.AddImage("MenuBG", root, Color.white);
             UITheme.FullStretch(bg.rectTransform);
+            var sky = UITheme.LoadArtSprite("SkyPanorama");
+            if (sky != null)
+            {
+                bg.sprite = sky;
+                bg.preserveAspect = false;
+            }
+
+            // 半透明标题卡，给主菜单一个绘本封面的视觉中心。
+            var titleCard = UITheme.AddPanel("TitleCard", root, new Color(1f, 1f, 1f, 0.9f));
+            UITheme.SetRect(titleCard.rectTransform,
+                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(-430, -190), new Vector2(430, -45));
+            var title = UITheme.AddText("Title", titleCard.transform,
+                GameLanguage.IsEnglish ? "Xiaoman's Storybook World" : "小满的绘本世界",
+                48, new Color(0.28f, 0.24f, 0.34f), TextAnchor.MiddleCenter);
+            UITheme.FullStretch(title.rectTransform);
 
             var silhouette = UITheme.AddImage("XiaoxingSilhouette", root, Color.black);
             silhouette.sprite = AssetCache.GetSprite("xiaoyi_silhouette");

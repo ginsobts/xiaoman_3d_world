@@ -235,6 +235,7 @@ namespace VN.World
         {
             if (Player == null) return;
             WorldState.Save(Player.transform.position, Player.transform.eulerAngles.y);
+            FairytaleVFX.Spawn("SaveTwinkle", Player.transform.position + Vector3.up * 1.5f, 2.4f, 1.15f);
             Hud.Toast(GameLanguage.Saved);
         }
 

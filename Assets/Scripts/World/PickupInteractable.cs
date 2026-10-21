@@ -58,6 +58,7 @@ namespace VN.World
             WorldState.SetFlag(VariableName);
             string label = string.IsNullOrEmpty(displayName) ? itemId : displayName;
             world.Hud.Toast(GameLanguage.PickedUp(label));
+            FairytaleVFX.Spawn("GoldenSparkle", transform.position + Vector3.up * 0.45f, 2.2f, 1.1f);
             SetHighlighted(false);
             gameObject.SetActive(false);
 
